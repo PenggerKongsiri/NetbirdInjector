@@ -11,6 +11,7 @@ NETBIRD_APT_URL="https://pkgs.netbird.io/debian"
 ASSUME_YES=0
 SKIP_NETBIRD_CONNECT=0
 NETBIRD_MANAGEMENT_URL=""
+NETBIRD_PREEXISTING=0
 TEMP_ROOT=""
 
 say() { printf '%s\n' "$*"; }
@@ -26,7 +27,7 @@ and launch the guided NetBird Injector Manager installer.
 
 Options:
   --yes                         Skip only the initial plan confirmation.
-  --skip-netbird-connect       Install the app before enrolling this VM in NetBird.
+  --skip-netbird-connect       Install a missing client but skip its enrollment.
   --netbird-management-url URL Use an HTTPS self-hosted NetBird management URL.
   -h, --help                    Show this help.
 
@@ -121,7 +122,7 @@ show_plan() {
   say "NetBird Injector Manager guided bootstrap"
   say "  1. Install ca-certificates, curl, git, GnuPG, OpenSSL, and xz support with apt."
   say "  2. Keep a compatible Node.js 24, or install the official archive after SHA-256 verification."
-  say "  3. Install the NetBird client from its signed apt repository and guide enrollment."
+  say "  3. Keep an existing NetBird installation unchanged; otherwise install it and guide enrollment."
   say "  4. Restore locked npm dependencies, run checks/audit, and build a verified release."
   say "  5. Launch the existing installer, which asks for the admin account and access mode."
   say ""
@@ -209,22 +210,25 @@ install_node() {
 install_netbird() {
   local public_key keyring source_list
   if command -v netbird >/dev/null 2>&1; then
+    NETBIRD_PREEXISTING=1
     say "Using existing NetBird client at $(command -v netbird)."
-  else
-    make_temp_root
-    public_key="${TEMP_ROOT}/netbird-public.key"
-    keyring="${TEMP_ROOT}/netbird-archive-keyring.gpg"
-    source_list="${TEMP_ROOT}/netbird.list"
-    say "Installing the NetBird client from its signed apt repository..."
-    curl --fail --location --proto '=https' --tlsv1.2 --silent --show-error \
-      --output "${public_key}" "${NETBIRD_KEY_URL}"
-    gpg --batch --yes --dearmor --output "${keyring}" "${public_key}"
-    printf 'deb [signed-by=/usr/share/keyrings/netbird-archive-keyring.gpg] %s stable main\n' "${NETBIRD_APT_URL}" > "${source_list}"
-    as_root install -o root -g root -m 0644 "${keyring}" /usr/share/keyrings/netbird-archive-keyring.gpg
-    as_root install -o root -g root -m 0644 "${source_list}" /etc/apt/sources.list.d/netbird.list
-    as_root apt-get update
-    as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y netbird
+    say "Leaving its package, service, management URL, and enrollment unchanged."
+    return
   fi
+
+  make_temp_root
+  public_key="${TEMP_ROOT}/netbird-public.key"
+  keyring="${TEMP_ROOT}/netbird-archive-keyring.gpg"
+  source_list="${TEMP_ROOT}/netbird.list"
+  say "Installing the NetBird client from its signed apt repository..."
+  curl --fail --location --proto '=https' --tlsv1.2 --silent --show-error \
+    --output "${public_key}" "${NETBIRD_KEY_URL}"
+  gpg --batch --yes --dearmor --output "${keyring}" "${public_key}"
+  printf 'deb [signed-by=/usr/share/keyrings/netbird-archive-keyring.gpg] %s stable main\n' "${NETBIRD_APT_URL}" > "${source_list}"
+  as_root install -o root -g root -m 0644 "${keyring}" /usr/share/keyrings/netbird-archive-keyring.gpg
+  as_root install -o root -g root -m 0644 "${source_list}" /etc/apt/sources.list.d/netbird.list
+  as_root apt-get update
+  as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y netbird
   as_root systemctl enable --now netbird.service
 }
 
@@ -241,6 +245,10 @@ netbird_is_connected() {
 
 guide_netbird_connection() {
   local entered_url=""; local -a up_args=()
+  if [[ "${NETBIRD_PREEXISTING}" -eq 1 ]]; then
+    say "Skipping NetBird service and enrollment setup because the client was already installed."
+    return
+  fi
   if netbird_is_connected; then
     say "NetBird is already connected."
     return
@@ -320,4 +328,6 @@ main() {
   finish_message
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

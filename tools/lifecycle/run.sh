@@ -24,6 +24,24 @@ if (validate_archive_list /tmp/unsafe-archive.list 'NetbirdInjector-012345678901
   exit 1
 fi
 ./bootstrap-ubuntu.sh --help >/dev/null
+mkdir -p /tmp/existing-netbird-bin
+# The variables belong to the generated fake and must expand only when that fake runs.
+# shellcheck disable=SC2016
+printf '%s\n' '#!/usr/bin/env bash' 'printf "%s\n" "$*" >> "${NETBIRD_CALL_LOG:?}"' > /tmp/existing-netbird-bin/netbird
+chmod 0755 /tmp/existing-netbird-bin/netbird
+(
+  export PATH="/tmp/existing-netbird-bin:${PATH}"
+  export NETBIRD_CALL_LOG=/tmp/existing-netbird.calls
+  : > "${NETBIRD_CALL_LOG}"
+  # shellcheck source=/dev/null
+  source ./bootstrap-ubuntu.sh
+  install_netbird
+  guide_netbird_connection
+  [[ "${NETBIRD_PREEXISTING}" -eq 1 ]]
+  [[ ! -s "${NETBIRD_CALL_LOG}" ]]
+) > /tmp/existing-netbird.log
+grep -F 'Leaving its package, service, management URL, and enrollment unchanged.' /tmp/existing-netbird.log >/dev/null
+grep -F 'Skipping NetBird service and enrollment setup because the client was already installed.' /tmp/existing-netbird.log >/dev/null
 if ./bootstrap-ubuntu.sh --not-a-real-option >/tmp/bootstrap-invalid.log 2>&1; then
   printf 'bootstrap unexpectedly accepted an unknown option\n' >&2
   exit 1

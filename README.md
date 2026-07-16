@@ -75,12 +75,12 @@ chmod 0755 bootstrap-ubuntu.sh
 
 Run it as your normal sudo-capable user when possible. The script:
 
-- installs the OS tools, a compatible official Node.js 24 archive after SHA-256 verification, and the NetBird client through its signed apt repository;
-- guides `netbird up` enrollment without accepting or storing a setup key;
+- installs the OS tools and a compatible official Node.js 24 archive after SHA-256 verification;
+- leaves an existing NetBird installation, service, management URL, and enrollment untouched; when NetBird is missing, installs it through its signed apt repository and guides `netbird up` without accepting or storing a setup key;
 - runs the locked dependency install, full test suite, high/critical dependency audit, release build, and release-manifest verification; and
 - starts the existing systemd installer, which asks for the administrator username, password, and loopback or private-HTTPS admin access mode.
 
-For a self-hosted NetBird deployment, either enter its HTTPS management URL when prompted or pass `--netbird-management-url`. If this VM must be enrolled separately with a dashboard-generated setup-key command, do that first and then use `--skip-netbird-connect`.
+For a self-hosted NetBird deployment where the client is not installed yet, either enter its HTTPS management URL when prompted or pass `--netbird-management-url`. If NetBird is already installed, all NetBird setup options are ignored and the existing configuration is left unchanged. If a missing client must be enrolled separately with a dashboard-generated setup key, run the bootstrap with `--skip-netbird-connect`, then run the exact enrollment command from the NetBird dashboard.
 
 The bootstrap deliberately does **not** create NetBird policies, DNS records, firewall rules, reverse-proxy services, Coolify/Traefik changes, or application routes. Follow [the NetBird setup guide](docs/NETBIRD_SETUP.md) after installation and begin with a parallel test hostname. Ubuntu/Debian VM validation is still an external pre-1.0 gate; see [the support matrix](docs/SUPPORT_MATRIX.md).
 

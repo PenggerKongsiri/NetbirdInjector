@@ -1,0 +1,32 @@
+# Testing
+
+All automated tests use fake peers, a fake NetBird HTTP API, fake upstream applications, and public test-only certificates. No real account, token, domain, or production service is required.
+
+```bash
+npm run check
+npm run test:coverage
+npm run browser:test
+npm run lifecycle:test
+npm run sandbox:reset
+npm run sandbox:test
+npm run soak:short
+npm run sandbox:destroy
+```
+
+`npm run check` includes syntax, example-configuration validation, repository secret/machine-path scanning, and all Node unit/integration tests. The browser smoke launches the local fake environment and pinned Chromium; it covers invalid/valid login, dashboard/route rendering, fake peer discovery, mobile viewport, keyboard focus, and logout. Administrative API integration tests cover throttling, CSRF, stored-content escaping, route/profile transactions, preview, import/export, enable/disable, and exact rollback.
+
+The Docker lifecycle test uses a normal Debian/Node container and a mocked `systemctl`. It validates install/update/rollback/preservation logic and file permissions, but it is not actual systemd, a boot, or a reboot. See [SANDBOX.md](SANDBOX.md) for container functional and soak commands.
+
+The suite covers strict schema/configuration and CIDR policy, literal-IP SSRF regression, route transactions/current-draft/history/rollback/profile snapshots, bounded profile expansion, eligibility and malformed HTML boundary handling, duplicate markers/configured snippets, compression/decompression/transformed-output ceilings, UTF-8 BOM and invalid-encoding preservation, CSP/report-only behavior, JSON/SSE/download/range passthrough, upload ceiling, slow upstream, WebSocket-only upgrades, forwarding-header spoofing, exact-host failure, password/session/cookie/rate-limit behavior, admin login/CSRF/draft/activation/exact-snapshot enable/disable/export/import rejection, custom API base paths and fake NetBird metadata/cache outage, custom CA/SNI, syntax checks, and backup corruption detection.
+
+Start the interactive fake environment:
+
+```bash
+npm run test:environment
+```
+
+It prints a fake username/password and two random loopback ports. Use the UI, Account Settings, peer selector, preview, history, and route actions. Its database/token are temporary and deleted on Ctrl+C.
+
+## Still-manual test categories
+
+The production checklist still tracks actual systemd/reboot on a matching Ubuntu VM, public-CA HTTPS, physical arm64, current real NetBird versions, real Coolify/Traefik/application combinations, long-running production streams, and the 24-hour staging soak. Those are not claimed by local automation.

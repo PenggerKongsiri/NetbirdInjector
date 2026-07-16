@@ -1,0 +1,42 @@
+{
+  "proxy": {
+    "listen": "0.0.0.0",
+    "port": 8080,
+    "externalProtocol": "https",
+    "maxHeaderBytes": 16384,
+    "maxRequestBytes": 52428800
+  },
+  "admin": {
+    "listen": "127.0.0.1",
+    "port": 9090,
+    "username": "admin",
+    "passwordHash": "REPLACE_WITH_SCRIPTS_HASH_PASSWORD_OUTPUT",
+    "allowRemote": false,
+    "cookieSecure": false,
+    "sessionMinutes": 30,
+    "allowedCidrs": ["127.0.0.0/8", "::1/128"],
+    "tlsCertFile": "",
+    "tlsKeyFile": ""
+  },
+  "storage": {
+    "database": "/var/lib/netbird-injector-manager/state.db"
+  },
+  "network": {
+    "allowedTargetCidrs": ["100.64.0.0/10"],
+    "allowedPorts": [80, 443, 3000, 8000, 8080, 8443],
+    "trustedIngressCidrs": ["100.64.0.0/10"]
+  },
+  "netbird": {
+    "mode": "manual",
+    "apiBaseUrl": "https://api.netbird.io",
+    "tokenFile": "/etc/netbird-injector-manager/netbird.token",
+    "caFile": "",
+    "allowInsecureApi": false,
+    "writeEnabled": false,
+    "cacheSeconds": 60,
+    "cliPath": "/usr/bin/netbird"
+  },
+  "logging": {
+    "level": "info"
+  }
+}

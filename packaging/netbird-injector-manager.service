@@ -1,0 +1,39 @@
+[Unit]
+Description=NetBird Injector Manager
+Documentation=file:/opt/netbird-injector-manager/current/README.md
+After=network-online.target netbird.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=netbird-injector
+Group=netbird-injector
+WorkingDirectory=/opt/netbird-injector-manager/current
+Environment=NIM_CONFIG=/etc/netbird-injector-manager/config.json
+ExecStart=/usr/bin/node --jitless --disable-proto=throw /opt/netbird-injector-manager/current/src/main.mjs
+Restart=on-failure
+RestartSec=3s
+TimeoutStopSec=20s
+UMask=0027
+LimitNOFILE=65536
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/var/lib/netbird-injector-manager /var/backups/netbird-injector-manager
+
+[Install]
+WantedBy=multi-user.target

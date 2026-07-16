@@ -1,0 +1,60 @@
+name: Release validation artifacts
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  source-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.18.0
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - run: npm run check
+      - run: npm run release:build
+      - run: npm run release:inspect
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: verified-source-runtime
+          path: dist/release/
+          if-no-files-found: error
+
+  container-architecture:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            artifact: linux-amd64
+          - platform: linux/arm64
+            artifact: linux-arm64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - run: mkdir -p dist/images
+      - name: Build architecture-specific OCI artifact
+        run: docker buildx build --file Containerfile --platform '${{ matrix.platform }}' --output 'type=oci,dest=dist/images/netbird-injector-${{ matrix.artifact }}.tar' .
+      - name: Checksum architecture artifact
+        run: sha256sum 'dist/images/netbird-injector-${{ matrix.artifact }}.tar' > 'dist/images/netbird-injector-${{ matrix.artifact }}.tar.sha256'
+      - name: Emulated arm64 runtime smoke
+        if: matrix.platform == 'linux/arm64'
+        run: |
+          docker buildx build --file Containerfile --platform linux/arm64 --load --tag nim-arm64-smoke .
+          docker run --rm --platform linux/arm64 nim-arm64-smoke node --version
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: container-${{ matrix.artifact }}
+          path: dist/images/*.tar
+          if-no-files-found: error

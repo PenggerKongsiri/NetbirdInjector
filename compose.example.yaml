@@ -1,0 +1,16 @@
+services:
+  injector-manager:
+    build:
+      context: .
+      dockerfile: Containerfile
+    restart: unless-stopped
+    network_mode: host
+    read_only: true
+    user: "10001:10001"
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m,mode=1777
+    volumes:
+      - ./config/config.container.json:/etc/netbird-injector-manager/config.json:ro
+      - ./data:/var/lib/netbird-injector-manager

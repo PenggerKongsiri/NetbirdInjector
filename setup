@@ -1,0 +1,396 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+APP="netbird-injector-manager"
+SERVICE_USER="netbird-injector"
+OPT_DIR="/opt/${APP}"
+CONFIG_DIR="/etc/${APP}"
+CONFIG_FILE="${CONFIG_DIR}/config.json"
+DATA_DIR="/var/lib/${APP}"
+BACKUP_DIR="/var/backups/${APP}"
+UNIT_FILE="/etc/systemd/system/${APP}.service"
+ADMIN_CERT_FILE="${CONFIG_DIR}/admin.crt"
+ADMIN_KEY_FILE="${CONFIG_DIR}/admin.key"
+SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+
+say() { printf '%s\n' "$*"; }
+die() { printf 'error: %s\n' "$*" >&2; exit 1; }
+need_root() { [[ "${EUID}" -eq 0 ]] || die "this command must run as root"; }
+need_linux() { [[ "$(uname -s)" == "Linux" ]] || die "native installation currently supports Linux only"; }
+need_systemd() { command -v systemctl >/dev/null && [[ -d /run/systemd/system ]] || die "systemd is required for native lifecycle commands"; }
+
+check_node() {
+  command -v node >/dev/null || die "Node.js 24.15 or newer is required"
+  node -e 'const [m,n]=process.versions.node.split(".").map(Number); if(m!==24 || n<15) process.exit(1)' || die "Node.js 24.15 through 24.x is required"
+}
+
+detect() {
+  local systemd_status container_status
+  # shellcheck source=/dev/null
+  say "OS: $(. /etc/os-release; printf '%s %s' "${ID:-unknown}" "${VERSION_ID:-unknown}")"
+  say "Architecture: $(uname -m)"
+  if command -v systemctl >/dev/null; then systemd_status=available; else systemd_status=unavailable; fi
+  if command -v docker >/dev/null; then container_status="$(docker --version 2>/dev/null || say unavailable)"; else container_status=unavailable; fi
+  say "systemd: ${systemd_status}"
+  say "container runtime: ${container_status}"
+  if command -v netbird >/dev/null; then
+    say "NetBird CLI: $(command -v netbird)"
+    # shellcheck disable=SC2016
+    netbird status --json 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const j=JSON.parse(s); console.log(`NetBird management connected: ${Boolean(j.management?.connected ?? j.management?.Connected)}`)}catch{console.log("NetBird status: unavailable")}})'
+  else
+    say "NetBird CLI: not detected (manual mode remains available)"
+  fi
+  if command -v ip >/dev/null; then
+    say "Possible NetBird interface addresses:"
+    ip -o addr show 2>/dev/null | awk '$2 ~ /^wt/ && ($3 == "inet" || $3 == "inet6") {print $2, $3, $4}' || true
+  fi
+  if command -v ss >/dev/null; then
+    say "Existing listeners on planned ports:"
+    ss -ltnp 2>/dev/null | awk 'NR==1 || /:8080 |:9090 /' || true
+  fi
+}
+
+ensure_account_and_directories() {
+  getent group "${SERVICE_USER}" >/dev/null || groupadd --system "${SERVICE_USER}"
+  id "${SERVICE_USER}" >/dev/null 2>&1 || useradd --system --gid "${SERVICE_USER}" --home-dir "${DATA_DIR}" --shell /usr/sbin/nologin "${SERVICE_USER}"
+  install -d -m 0755 "${OPT_DIR}/releases"
+  install -d -o root -g "${SERVICE_USER}" -m 0750 "${CONFIG_DIR}"
+  install -d -o "${SERVICE_USER}" -g "${SERVICE_USER}" -m 0750 "${DATA_DIR}"
+  install -d -o "${SERVICE_USER}" -g "${SERVICE_USER}" -m 0750 "${BACKUP_DIR}"
+}
+
+install_release() {
+  local release timestamp link
+  timestamp="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  release="${OPT_DIR}/releases/${timestamp}"
+  install -d -m 0755 "${release}"
+  for item in src scripts packaging docs config package.json package-lock.json README.md LICENSE SECURITY.md CONTRIBUTING.md AGENTS.md Containerfile compose.example.yaml setup RELEASE_MANIFEST.json; do
+    [[ -e "${SOURCE_DIR}/${item}" ]] && cp -a -- "${SOURCE_DIR}/${item}" "${release}/"
+  done
+  chown -R root:root "${release}"
+  chmod -R go-w "${release}"
+  link="${OPT_DIR}/current.new"
+  ln -sfn -- "${release}" "${link}"
+  mv -Tf -- "${link}" "${OPT_DIR}/current"
+  say "Installed release ${release}"
+}
+
+verify_release_source() {
+  [[ -f "${SOURCE_DIR}/RELEASE_MANIFEST.json" ]] || die "update requires an extracted release with RELEASE_MANIFEST.json; checked-out source must be packaged first"
+  node "${SOURCE_DIR}/scripts/release.mjs" verify "${SOURCE_DIR}"
+}
+
+is_loopback_address() {
+  [[ "$1" == "::1" || "$1" == 127.* ]]
+}
+
+create_admin_certificate() {
+  local address="$1"
+  command -v openssl >/dev/null || die "OpenSSL is required for direct private HTTPS admin access"
+  node -e 'const net=require("node:net");if(!net.isIP(process.argv[1])||["0.0.0.0","::"].includes(process.argv[1]))process.exit(1)' "${address}" \
+    || die "admin HTTPS listen address must be one explicit literal IP"
+  openssl req -x509 -newkey rsa:3072 -sha256 -days 825 -nodes \
+    -subj "/CN=${address}" -addext "subjectAltName=IP:${address}" \
+    -keyout "${ADMIN_KEY_FILE}.new" -out "${ADMIN_CERT_FILE}.new" >/dev/null 2>&1
+  install -o root -g "${SERVICE_USER}" -m 0640 "${ADMIN_KEY_FILE}.new" "${ADMIN_KEY_FILE}"
+  install -o root -g "${SERVICE_USER}" -m 0644 "${ADMIN_CERT_FILE}.new" "${ADMIN_CERT_FILE}"
+  rm -f -- "${ADMIN_KEY_FILE}.new" "${ADMIN_CERT_FILE}.new"
+  say "Generated a private HTTPS certificate. Verify this fingerprint on first connection:"
+  openssl x509 -in "${ADMIN_CERT_FILE}" -noout -fingerprint -sha256
+}
+
+initial_config() {
+  [[ -f "${CONFIG_FILE}" ]] && return
+  local password confirmation hash admin_username admin_listen admin_allowed admin_cert admin_key access_choice answer
+  admin_username="${NIM_ADMIN_USERNAME:-admin}"
+  admin_listen="${NIM_ADMIN_LISTEN:-127.0.0.1}"
+  admin_allowed="${NIM_ADMIN_ALLOWED_CIDRS:-127.0.0.0/8,::1/128}"
+  admin_cert=""; admin_key=""
+  if [[ -n "${NIM_ADMIN_PASSWORD_FILE:-}" ]]; then
+    [[ -f "${NIM_ADMIN_PASSWORD_FILE}" && ! -L "${NIM_ADMIN_PASSWORD_FILE}" ]] || die "NIM_ADMIN_PASSWORD_FILE must name a regular non-symlink file"
+    [[ "$(stat -c '%a' -- "${NIM_ADMIN_PASSWORD_FILE}")" =~ ^[046]00$ ]] || die "NIM_ADMIN_PASSWORD_FILE must not be accessible to group or other users"
+    password="$(<"${NIM_ADMIN_PASSWORD_FILE}")"
+  else
+    [[ -t 0 ]] || die "initial installation requires an interactive terminal or NIM_ADMIN_PASSWORD_FILE"
+    read -r -p "Administrator username [${admin_username}]: " answer; admin_username="${answer:-$admin_username}"
+    say "Choose a unique administrator password of at least 14 characters."
+    read -r -s -p "Administrator password: " password; printf '\n'
+    read -r -s -p "Confirm administrator password: " confirmation; printf '\n'
+    [[ "${password}" == "${confirmation}" ]] || die "administrator passwords did not match"
+    say "Admin access: 1) loopback + SSH tunnel (recommended), 2) direct HTTPS on one private LAN/NetBird IP"
+    read -r -p "Choose admin access mode [1]: " access_choice
+    if [[ "${access_choice:-1}" == "2" ]]; then
+      read -r -p "Private LAN or NetBird IP to bind (example 192.168.1.104): " admin_listen
+      [[ -n "${admin_listen}" ]] || die "a private admin listen IP is required"
+      read -r -p "Allowed administrator client CIDRs (example 192.168.1.0/24): " admin_allowed
+      [[ -n "${admin_allowed}" ]] || die "at least one private administrator client CIDR is required"
+    elif [[ "${access_choice:-1}" != "1" ]]; then
+      die "admin access mode must be 1 or 2"
+    fi
+  fi
+  if ! is_loopback_address "${admin_listen}"; then
+    [[ "${admin_allowed}" != "127.0.0.0/8,::1/128" ]] || die "NIM_ADMIN_ALLOWED_CIDRS is required for non-loopback admin access"
+    create_admin_certificate "${admin_listen}"
+    admin_cert="${ADMIN_CERT_FILE}"; admin_key="${ADMIN_KEY_FILE}"
+  fi
+  hash="$(printf '%s' "${password}" | node "${OPT_DIR}/current/scripts/hash-password.mjs")"
+  node "${OPT_DIR}/current/scripts/configure.mjs" "${CONFIG_FILE}" "0.0.0.0" "8080" "${admin_listen}" "9090" "100.64.0.0/10" "80,443,3000,8000,8080,8443" "${hash}" "manual" "https://api.netbird.io" "" "${admin_username}" "${admin_allowed}" "${admin_cert}" "${admin_key}"
+  chown root:"${SERVICE_USER}" "${CONFIG_FILE}"
+  chmod 0640 "${CONFIG_FILE}"
+  unset password confirmation
+}
+
+install_unit() {
+  install -o root -g root -m 0644 "${OPT_DIR}/current/packaging/${APP}.service" "${UNIT_FILE}" || return 1
+  systemctl daemon-reload || return 1
+}
+
+health_check() {
+  for _ in {1..30}; do
+    # shellcheck disable=SC2016
+    if node -e 'const c=require(process.argv[1]);const tls=Boolean(c.admin.tlsCertFile);const client=require(tls?"node:https":"node:http");const req=client.request({host:c.admin.listen,port:c.admin.port,path:"/healthz",method:"GET",rejectUnauthorized:false,timeout:1000},r=>{r.resume();process.exit(r.statusCode===200?0:1)});req.on("timeout",()=>req.destroy());req.on("error",()=>process.exit(1));req.end()' "${CONFIG_FILE}"; then return 0; fi
+    sleep 1
+  done
+  return 1
+}
+
+create_backup() {
+  local output
+  [[ -f "${CONFIG_FILE}" ]] || die "configuration does not exist"
+  output="${BACKUP_DIR}/backup-$(date -u +%Y%m%dT%H%M%SZ)"
+  runuser -u "${SERVICE_USER}" -- node "${OPT_DIR}/current/scripts/backup.mjs" create "${CONFIG_FILE}" "${output}"
+  say "Backup created at ${output}; NetBird API token files are intentionally excluded."
+}
+
+cmd_install() {
+  need_root; need_linux; need_systemd; check_node; detect
+  if [[ -L "${OPT_DIR}/current" && -f "${CONFIG_FILE}" ]]; then
+    say "An installation already exists; applying the idempotent repair path. Use './setup update' for new code."
+    cmd_repair
+    return
+  fi
+  ensure_account_and_directories
+  install_release
+  initial_config
+  install_unit
+  systemctl enable --now "${APP}.service"
+  health_check || die "service did not become healthy; inspect: journalctl -u ${APP}"
+  local admin_url
+  admin_url="$(node -e 'const c=require(process.argv[1]);const p=c.admin.tlsCertFile?"https":"http";const h=c.admin.listen.includes(":")?`[${c.admin.listen}]`:c.admin.listen;process.stdout.write(`${p}://${h}:${c.admin.port}`)' "${CONFIG_FILE}")"
+  say "Installed successfully. Admin UI: ${admin_url}; proxy listener: 0.0.0.0:8080."
+  is_loopback_address "$(node -p 'require(process.argv[1]).admin.listen' "${CONFIG_FILE}")" && say "Use an SSH tunnel for admin access: ssh -L 9090:127.0.0.1:9090 <USER>@<HOST>"
+}
+
+cmd_update() {
+  need_root; need_linux; need_systemd; check_node
+  [[ -L "${OPT_DIR}/current" ]] || die "application is not installed"
+  verify_release_source
+  local previous
+  previous="$(readlink -f -- "${OPT_DIR}/current")"
+  create_backup
+  install_release
+  if ! install_unit; then
+    ln -sfn -- "${previous}" "${OPT_DIR}/current.rollback"
+    mv -Tf -- "${OPT_DIR}/current.rollback" "${OPT_DIR}/current"
+    install -o root -g root -m 0644 "${previous}/packaging/${APP}.service" "${UNIT_FILE}"
+    systemctl daemon-reload || true
+    die "new systemd unit failed validation/reload; code symlink was rolled back"
+  fi
+  if ! systemctl restart "${APP}.service" || ! health_check; then
+    ln -sfn -- "${previous}" "${OPT_DIR}/current.rollback"
+    mv -Tf -- "${OPT_DIR}/current.rollback" "${OPT_DIR}/current"
+    install -o root -g root -m 0644 "${previous}/packaging/${APP}.service" "${UNIT_FILE}"
+    systemctl daemon-reload || true
+    if ! systemctl restart "${APP}.service" || ! health_check; then die "update and automatic rollback both failed; data backup is preserved"; fi
+    die "update failed health checks and was rolled back to ${previous}"
+  fi
+  say "Update passed health checks."
+}
+
+cmd_rollback() {
+  need_root; need_linux; need_systemd; check_node
+  [[ -L "${OPT_DIR}/current" ]] || die "application is not installed"
+  local previous target candidate
+  previous="$(readlink -f -- "${OPT_DIR}/current")"
+  target="${1:-}"
+  if [[ -n "${target}" ]]; then
+    target="$(readlink -f -- "${target}")"
+    [[ "${target}" == "${OPT_DIR}/releases/"* ]] || die "rollback target must be an installed release beneath ${OPT_DIR}/releases"
+  else
+    while IFS= read -r candidate; do
+      candidate="${candidate#* }"
+      if [[ "${candidate}" != "${previous}" ]]; then target="${candidate}"; break; fi
+    done < <(find "${OPT_DIR}/releases" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' | sort -rn)
+  fi
+  [[ -n "${target}" && -d "${target}" && "${target}" != "${previous}" ]] || die "no previous installed release is available"
+  node "${target}/scripts/release.mjs" verify "${target}"
+  create_backup
+  ln -sfn -- "${target}" "${OPT_DIR}/current.rollback"
+  mv -Tf -- "${OPT_DIR}/current.rollback" "${OPT_DIR}/current"
+  if ! install_unit || ! systemctl restart "${APP}.service" || ! health_check; then
+    ln -sfn -- "${previous}" "${OPT_DIR}/current.rollback"
+    mv -Tf -- "${OPT_DIR}/current.rollback" "${OPT_DIR}/current"
+    install_unit || true
+    systemctl restart "${APP}.service" || true
+    die "rollback candidate failed; the prior release was reinstated"
+  fi
+  say "Rolled back from ${previous} to ${target}; configuration and data were preserved."
+}
+
+cmd_reconfigure() {
+  need_root; need_linux; need_systemd; check_node
+  [[ -f "${CONFIG_FILE}" ]] || die "install the application first"
+  local proxy_listen proxy_port admin_listen original_admin_listen admin_port admin_username admin_allowed admin_cert admin_key cidrs ports mode api token hash answer saved
+  proxy_listen="$(node -p 'require(process.argv[1]).proxy.listen' "${CONFIG_FILE}")"
+  proxy_port="$(node -p 'require(process.argv[1]).proxy.port' "${CONFIG_FILE}")"
+  admin_listen="$(node -p 'require(process.argv[1]).admin.listen' "${CONFIG_FILE}")"
+  original_admin_listen="${admin_listen}"
+  admin_port="$(node -p 'require(process.argv[1]).admin.port' "${CONFIG_FILE}")"
+  admin_username="$(node -p 'require(process.argv[1]).admin.username || "admin"' "${CONFIG_FILE}")"
+  admin_allowed="$(node -p '(require(process.argv[1]).admin.allowedCidrs || ["127.0.0.0/8","::1/128"]).join(",")' "${CONFIG_FILE}")"
+  admin_cert="$(node -p 'require(process.argv[1]).admin.tlsCertFile || ""' "${CONFIG_FILE}")"
+  admin_key="$(node -p 'require(process.argv[1]).admin.tlsKeyFile || ""' "${CONFIG_FILE}")"
+  cidrs="$(node -p 'require(process.argv[1]).network.allowedTargetCidrs.join(",")' "${CONFIG_FILE}")"
+  ports="$(node -p 'require(process.argv[1]).network.allowedPorts.join(",")' "${CONFIG_FILE}")"
+  mode="$(node -p 'require(process.argv[1]).netbird.mode' "${CONFIG_FILE}")"
+  api="$(node -p 'require(process.argv[1]).netbird.apiBaseUrl' "${CONFIG_FILE}")"
+  token="$(node -p 'require(process.argv[1]).netbird.tokenFile || ""' "${CONFIG_FILE}")"
+  read -r -p "Proxy listen address [${proxy_listen}]: " answer; proxy_listen="${answer:-$proxy_listen}"
+  read -r -p "Proxy port [${proxy_port}]: " answer; proxy_port="${answer:-$proxy_port}"
+  read -r -p "Admin listen address [${admin_listen}]: " answer; admin_listen="${answer:-$admin_listen}"
+  read -r -p "Admin port [${admin_port}]: " answer; admin_port="${answer:-$admin_port}"
+  read -r -p "Allowed administrator client CIDRs [${admin_allowed}]: " answer; admin_allowed="${answer:-$admin_allowed}"
+  read -r -p "Allowed target CIDRs, comma separated [${cidrs}]: " answer; cidrs="${answer:-$cidrs}"
+  read -r -p "Allowed target ports, comma separated [${ports}]: " answer; ports="${answer:-$ports}"
+  read -r -p "NetBird mode (manual/api) [${mode}]: " answer; mode="${answer:-$mode}"
+  if [[ "${mode}" == "api" ]]; then
+    read -r -p "NetBird API base URL [${api}]: " answer; api="${answer:-$api}"
+    read -r -p "NetBird token file path: " token
+  fi
+  hash="$(node -e 'const c=require(process.argv[1]);process.stdout.write(c.admin.passwordHash)' "${CONFIG_FILE}")"
+  if is_loopback_address "${admin_listen}"; then
+    admin_allowed="127.0.0.0/8,::1/128"; admin_cert=""; admin_key=""
+  elif [[ -z "${admin_cert}" || -z "${admin_key}" || "${admin_listen}" != "${original_admin_listen}" ]]; then
+    create_admin_certificate "${admin_listen}"
+    admin_cert="${ADMIN_CERT_FILE}"; admin_key="${ADMIN_KEY_FILE}"
+  fi
+  saved="${CONFIG_FILE}.before-reconfigure"
+  cp -a -- "${CONFIG_FILE}" "${saved}"
+  node "${OPT_DIR}/current/scripts/configure.mjs" "${CONFIG_FILE}" "${proxy_listen}" "${proxy_port}" "${admin_listen}" "${admin_port}" "${cidrs}" "${ports}" "${hash}" "${mode}" "${api}" "${token}" "${admin_username}" "${admin_allowed}" "${admin_cert}" "${admin_key}"
+  chown root:"${SERVICE_USER}" "${CONFIG_FILE}"; chmod 0640 "${CONFIG_FILE}"
+  if ! systemctl restart "${APP}.service" || ! health_check; then
+    mv -f -- "${saved}" "${CONFIG_FILE}"
+    systemctl restart "${APP}.service" || true
+    die "new configuration failed health checks and was rolled back"
+  fi
+  rm -f -- "${saved}"
+  say "Configuration applied and health checked. Change username, password, and 2FA from the Settings page in the admin UI."
+}
+
+cmd_repair() {
+  need_root; need_linux; need_systemd; check_node
+  ensure_account_and_directories
+  chown root:"${SERVICE_USER}" "${CONFIG_FILE}"; chmod 0640 "${CONFIG_FILE}"
+  chown -R "${SERVICE_USER}":"${SERVICE_USER}" "${DATA_DIR}" "${BACKUP_DIR}"
+  install_unit
+  systemctl enable --now "${APP}.service"
+  health_check || die "repair completed but service remains unhealthy"
+  say "Permissions, unit file, enablement, and health were repaired."
+}
+
+cmd_status() {
+  need_root; need_linux; need_systemd
+  systemctl status --no-pager "${APP}.service" || true
+  if health_check; then say "Health: ok"; else say "Health: unavailable"; return 1; fi
+}
+
+cmd_diagnostics() {
+  need_root; need_linux; check_node
+  node "${OPT_DIR}/current/scripts/diagnostics.mjs" "${CONFIG_FILE}"
+}
+
+cmd_reset_admin() {
+  need_root; need_linux; need_systemd; check_node
+  [[ -f "${CONFIG_FILE}" ]] || die "install the application first"
+  local username password confirmation hash
+  username="${NIM_ADMIN_USERNAME:-admin}"
+  if [[ -n "${NIM_ADMIN_PASSWORD_FILE:-}" ]]; then
+    [[ -f "${NIM_ADMIN_PASSWORD_FILE}" && ! -L "${NIM_ADMIN_PASSWORD_FILE}" ]] || die "NIM_ADMIN_PASSWORD_FILE must name a regular non-symlink file"
+    [[ "$(stat -c '%a' -- "${NIM_ADMIN_PASSWORD_FILE}")" =~ ^[046]00$ ]] || die "NIM_ADMIN_PASSWORD_FILE must not be accessible to group or other users"
+    password="$(<"${NIM_ADMIN_PASSWORD_FILE}")"
+  else
+    [[ -t 0 ]] || die "reset-admin requires an interactive terminal or NIM_ADMIN_PASSWORD_FILE"
+    say "This root-only recovery action creates a backup, resets the administrator account, disables 2FA, and signs out all sessions."
+    read -r -p "New administrator username [${username}]: " confirmation; username="${confirmation:-$username}"
+    read -r -s -p "New administrator password (minimum 14 characters): " password; printf '\n'
+    read -r -s -p "Confirm new administrator password: " confirmation; printf '\n'
+    [[ "${password}" == "${confirmation}" ]] || die "administrator passwords did not match"
+  fi
+  hash="$(printf '%s' "${password}" | node "${OPT_DIR}/current/scripts/hash-password.mjs")"
+  create_backup
+  systemctl stop "${APP}.service"
+  if ! node "${OPT_DIR}/current/scripts/reset-admin.mjs" "${CONFIG_FILE}" "${username}" "${hash}"; then
+    systemctl start "${APP}.service" || true
+    die "administrator reset failed; the pre-reset backup is preserved"
+  fi
+  chown root:"${SERVICE_USER}" "${CONFIG_FILE}"; chmod 0640 "${CONFIG_FILE}"
+  chown -R "${SERVICE_USER}":"${SERVICE_USER}" "${DATA_DIR}"
+  unset password confirmation hash
+  systemctl start "${APP}.service"
+  health_check || die "administrator reset completed but the service failed health checks; restore the pre-reset backup"
+  say "Administrator account reset and 2FA disabled. Sign in and enroll 2FA again from Settings."
+}
+
+cmd_backup() { need_root; need_linux; need_systemd; check_node; create_backup; }
+
+cmd_restore() {
+  need_root; need_linux; need_systemd; check_node
+  local source rollback
+  source="${1:-}"; [[ -n "${source}" ]] || die "restore requires a backup directory"
+  source="$(readlink -f -- "${source}")"
+  [[ "${source}" == "${BACKUP_DIR}"/* ]] || die "backup must be located beneath ${BACKUP_DIR}"
+  node "${OPT_DIR}/current/scripts/backup.mjs" verify "${source}/config.json" "${source}"
+  node -e 'const c=require(process.argv[1]);if(c.storage?.database!=="/var/lib/netbird-injector-manager/state.db")throw new Error("managed restore requires the standard database path")' "${source}/config.json"
+  rollback="${BACKUP_DIR}/pre-restore-$(date -u +%Y%m%dT%H%M%SZ)"
+  runuser -u "${SERVICE_USER}" -- node "${OPT_DIR}/current/scripts/backup.mjs" create "${CONFIG_FILE}" "${rollback}"
+  systemctl stop "${APP}.service"
+  install -o root -g "${SERVICE_USER}" -m 0640 "${source}/config.json" "${CONFIG_FILE}"
+  install -o "${SERVICE_USER}" -g "${SERVICE_USER}" -m 0640 "${source}/state.db" "${DATA_DIR}/state.db"
+  rm -f -- "${DATA_DIR}/state.db-wal" "${DATA_DIR}/state.db-shm"
+  if ! systemctl start "${APP}.service" || ! health_check; then
+    install -o root -g "${SERVICE_USER}" -m 0640 "${rollback}/config.json" "${CONFIG_FILE}"
+    install -o "${SERVICE_USER}" -g "${SERVICE_USER}" -m 0640 "${rollback}/state.db" "${DATA_DIR}/state.db"
+    rm -f -- "${DATA_DIR}/state.db-wal" "${DATA_DIR}/state.db-shm"
+    systemctl restart "${APP}.service" || true
+    die "restore failed health checks; pre-restore state was reinstated"
+  fi
+  say "Restore completed and passed health checks."
+}
+
+cmd_uninstall() {
+  need_root; need_linux; need_systemd
+  local purge_config=false purge_data=false purge_backups=false
+  for arg in "$@"; do case "${arg}" in --purge-config) purge_config=true;; --purge-data) purge_data=true;; --purge-backups) purge_backups=true;; *) die "unknown uninstall option: ${arg}";; esac; done
+  systemctl disable --now "${APP}.service" 2>/dev/null || true
+  rm -f -- "${UNIT_FILE}"
+  systemctl daemon-reload
+  rm -rf -- "${OPT_DIR}"
+  ${purge_config} && rm -rf -- "${CONFIG_DIR}"
+  ${purge_data} && rm -rf -- "${DATA_DIR}"
+  ${purge_backups} && rm -rf -- "${BACKUP_DIR}"
+  if ! ${purge_config} || ! ${purge_data} || ! ${purge_backups}; then say "Configuration, data, and/or backups were preserved. Use explicit --purge-* flags to remove each category."; fi
+  say "Managed NetBird services were not changed because this installer never creates them."
+}
+
+usage() {
+  say "Usage: sudo ./setup {install|update|rollback [RELEASE_DIR]|reconfigure|repair|reset-admin|health|status|doctor|diagnostics|backup|restore DIR|uninstall [--purge-config] [--purge-data] [--purge-backups]|detect}"
+}
+
+command="${1:-help}"; shift || true
+case "${command}" in
+  install) cmd_install "$@";; update) cmd_update "$@";; rollback) cmd_rollback "$@";; reconfigure) cmd_reconfigure "$@";; repair) cmd_repair "$@";;
+  reset-admin) cmd_reset_admin "$@";;
+  health) need_root; need_linux; health_check;; status) cmd_status "$@";; doctor|diagnostics) cmd_diagnostics "$@";; backup) cmd_backup "$@";; restore) cmd_restore "$@";;
+  uninstall) cmd_uninstall "$@";; detect) need_linux; detect;; help|-h|--help) usage;; *) usage; exit 2;;
+esac

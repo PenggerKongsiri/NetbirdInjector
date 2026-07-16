@@ -1,0 +1,102 @@
+services:
+  fake-upstream:
+    build:
+      context: ../..
+      dockerfile: tools/sandbox/Containerfile
+    command: ["node", "tools/sandbox/upstream.mjs"]
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m,mode=1777"]
+    networks: [back]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8081/health',{signal:AbortSignal.timeout(1000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
+  fake-netbird-api:
+    build:
+      context: ../..
+      dockerfile: tools/sandbox/Containerfile
+    command: ["node", "tools/sandbox/netbird-api.mjs"]
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m,mode=1777"]
+    networks: [back]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8082/health',{signal:AbortSignal.timeout(1000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
+  injector:
+    build:
+      context: ../..
+      dockerfile: tools/sandbox/Containerfile
+    command: ["node", "tools/sandbox/launcher.mjs"]
+    environment:
+      NIM_CONFIG: /workspace/tools/sandbox/config.json
+    read_only: true
+    user: "10001:10001"
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m,mode=1777"]
+    volumes:
+      - state:/var/lib/netbird-injector-manager
+    networks: [front, back]
+    depends_on:
+      fake-upstream: { condition: service_healthy }
+      fake-netbird-api: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:9090/healthz',{signal:AbortSignal.timeout(1000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  fake-public-proxy:
+    build:
+      context: ../..
+      dockerfile: tools/sandbox/Containerfile
+    command: ["node", "tools/sandbox/public-proxy.mjs"]
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m,mode=1777"]
+    ports:
+      - "127.0.0.1:${NIM_SANDBOX_PORT:-18080}:8080"
+    networks: [front]
+    depends_on:
+      injector: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/__sandbox_health',{signal:AbortSignal.timeout(1000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
+  client:
+    build:
+      context: ../..
+      dockerfile: tools/sandbox/Containerfile
+    command: ["node", "tools/sandbox/test.mjs"]
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m,mode=1777"]
+    networks: [front, back]
+    depends_on:
+      fake-public-proxy: { condition: service_healthy }
+    profiles: [test]
+
+networks:
+  front:
+    internal: true
+    labels: { org.opencontainers.image.title: "NetBird Injector disposable sandbox front" }
+  back:
+    internal: true
+    labels: { org.opencontainers.image.title: "NetBird Injector disposable sandbox back" }
+
+volumes:
+  state:
+    labels: { org.opencontainers.image.title: "NetBird Injector disposable sandbox state" }

@@ -1,0 +1,10 @@
+FROM node:24.18.0-bookworm-slim
+
+RUN groupadd --system --gid 10001 nim && useradd --system --uid 10001 --gid nim --home-dir /var/lib/netbird-injector-manager --shell /usr/sbin/nologin nim
+WORKDIR /workspace
+COPY --chown=root:root package.json package-lock.json ./
+COPY --chown=root:root src ./src
+COPY --chown=root:root tools/sandbox ./tools/sandbox
+COPY --chown=root:root test/fixtures/tls ./test/fixtures/tls
+RUN mkdir -p /var/lib/netbird-injector-manager && chown -R nim:nim /var/lib/netbird-injector-manager && chmod -R go-w /workspace
+USER 10001:10001

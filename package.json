@@ -1,0 +1,54 @@
+{
+  "name": "netbird-injector-manager",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Security-focused reverse proxy route and HTML injection manager for NetBird deployments",
+  "type": "module",
+  "files": [
+    "src/",
+    "scripts/",
+    "packaging/",
+    "docs/",
+    "config/",
+    "AGENTS.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "Containerfile",
+    "compose.example.yaml",
+    "setup"
+  ],
+  "engines": {
+    "node": ">=24.15.0 <25"
+  },
+  "scripts": {
+    "start": "node src/main.mjs",
+    "dev": "node --watch src/main.mjs",
+    "check": "node scripts/check-syntax.mjs && node scripts/validate-examples.mjs && node scripts/repository-audit.mjs && node --test",
+    "check:runtime": "node scripts/check-syntax.mjs --runtime",
+    "test": "node --test",
+    "test:coverage": "node --test --experimental-test-coverage",
+    "test:environment": "node tools/fake-environment.mjs",
+    "browser:test": "node tools/browser-smoke.mjs",
+    "audit:repository": "node scripts/repository-audit.mjs",
+    "diagnostics": "node scripts/diagnostics.mjs",
+    "sandbox": "node tools/sandbox.mjs",
+    "sandbox:build": "node tools/sandbox.mjs build",
+    "sandbox:up": "node tools/sandbox.mjs up",
+    "sandbox:status": "node tools/sandbox.mjs status",
+    "sandbox:test": "node tools/sandbox.mjs test",
+    "sandbox:logs": "node tools/sandbox.mjs logs",
+    "sandbox:report": "node tools/sandbox.mjs report",
+    "sandbox:reset": "node tools/sandbox.mjs reset",
+    "sandbox:down": "node tools/sandbox.mjs down",
+    "sandbox:destroy": "node tools/sandbox.mjs destroy",
+    "soak:short": "node tools/sandbox.mjs soak --duration-seconds 20 --concurrency 8",
+    "soak:staging": "node tools/sandbox.mjs soak --duration-seconds 86400 --concurrency 16",
+    "lifecycle:test": "node tools/lifecycle.mjs",
+    "release:build": "node scripts/release.mjs build",
+    "release:inspect": "node scripts/release.mjs verify dist/release/netbird-injector-manager"
+  },
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "playwright": "^1.61.0"
+  }
+}

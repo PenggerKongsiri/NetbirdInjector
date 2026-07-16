@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>NetBird Injector Manager</title>
+  <link rel="stylesheet" href="/app.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <section id="login" class="login-card">
+      <div class="brand-mark">NI</div>
+      <p class="eyebrow">Private control plane</p>
+      <h1>NetBird Injector Manager</h1>
+      <p class="muted">Sign in to manage exact-host proxy routes and administrator-approved page injections.</p>
+      <form id="login-form">
+        <label>Administrator username<input id="username" autocomplete="username" value="admin" required></label>
+        <label>Administrator password<input id="password" type="password" autocomplete="current-password" required></label>
+        <label>Authenticator or recovery code <span class="muted">(when 2FA is enabled)</span><input id="second-factor" inputmode="numeric" autocomplete="one-time-code"></label>
+        <button type="submit">Sign in</button>
+      </form>
+      <p id="login-error" class="error" role="alert"></p>
+    </section>
+
+    <section id="app" hidden>
+      <header class="topbar">
+        <div><p class="eyebrow">NetBird Injector Manager</p><h1>Route control</h1></div>
+        <div class="top-actions"><span id="system-state" class="status-pill">Loading</span><button id="logout" class="ghost">Sign out</button></div>
+      </header>
+      <div class="danger-banner"><strong>Injection is privileged code execution in visitors’ browsers.</strong> Any enabled script can read or change data rendered by the target site. Review every source and scope.</div>
+      <nav class="tabs" aria-label="Sections">
+        <button data-view="routes" class="active">Routes</button>
+        <button data-view="profiles">Profiles</button>
+        <button data-view="peers">Peers</button>
+        <button data-view="preview">Preview</button>
+        <button data-view="audit">Audit</button>
+        <button data-view="settings">Settings</button>
+      </nav>
+
+      <section id="view-routes" class="view">
+        <div class="section-heading"><div><p class="eyebrow">Atomic versions</p><h2>Routes</h2></div><button id="new-route">New route</button></div>
+        <div id="route-list" class="cards"></div>
+        <form id="route-form" class="editor" hidden>
+          <div class="editor-heading"><div><p class="eyebrow">Draft editor</p><h2 id="route-editor-title">New route</h2></div><button type="button" id="close-route" class="ghost">Close</button></div>
+          <input id="route-id" type="hidden">
+          <div class="grid two">
+            <label>Public hostname<input id="route-hostname" placeholder="app.example.com" required></label>
+            <label>Environment scope<input id="route-environment" placeholder="production" value="production"></label>
+            <label>Mode<select id="route-mode"><option value="passthrough">Proxy without injection</option><option value="inject">Proxy and inject</option></select></label>
+            <label>Protocol<select id="upstream-protocol"><option value="http">HTTP</option><option value="https">HTTPS</option></select></label>
+            <label>Destination IP or DNS name<input id="upstream-host" placeholder="100.64.0.10" required></label>
+            <label>Destination port<input id="upstream-port" type="number" min="1" max="65535" required></label>
+            <label>Upstream Host header<input id="upstream-host-header" placeholder="internal.example.local"></label>
+            <label>TLS SNI / server name<input id="upstream-sni" placeholder="internal.example.local"></label>
+            <label>Connect timeout (ms)<input id="connect-timeout" type="number" min="100" max="120000"></label>
+            <label>Response timeout (ms)<input id="response-timeout" type="number" min="100" max="600000"></label>
+            <label>Idle/stream timeout (ms)<input id="idle-timeout" type="number" min="1000" max="3600000"></label>
+            <label>Maximum HTML bytes<input id="max-inject-bytes" type="number" min="1024"></label>
+          </div>
+          <div class="checks"><label><input id="route-enabled" type="checkbox"> Enable when activated</label><label><input id="tls-verify" type="checkbox" checked> Verify upstream TLS</label><label><input id="health-enabled" type="checkbox" checked> Gate activation on application health status (otherwise connectivity only)</label></div>
+          <div class="grid two">
+            <label>Health-check path<input id="health-path" value="/"></label>
+            <label>Health-check method<select id="health-method"><option value="GET">GET</option><option value="HEAD">HEAD</option></select></label>
+            <label>Accepted health statuses, comma separated<input id="health-statuses" value="200,204,301,302,401,403"></label>
+            <label>Excluded paths, one per line<textarea id="excluded-paths" rows="4" placeholder="/api/*"></textarea></label>
+            <label>Attached profile IDs, one per line<textarea id="profile-ids" rows="4"></textarea></label>
+            <label>CSP behavior<select id="csp-mode"><option value="skip">Skip injection when CSP exists (recommended)</option><option value="preserve">Inject but preserve CSP unchanged</option></select></label>
+          </div>
+          <label>Direct injection items (JSON array; lower priority executes first)<textarea id="injections" rows="12" spellcheck="false">[]</textarea></label>
+          <label>Custom CA PEM<textarea id="custom-ca" rows="5" spellcheck="false"></textarea></label>
+          <label>Notes<textarea id="route-notes" rows="3"></textarea></label>
+          <div class="form-actions"><button type="submit">Save draft</button><button type="button" id="test-route" class="secondary" disabled>Test draft</button><button type="button" id="activate-route" class="accent" disabled>Activate atomically</button></div>
+          <pre id="route-result" class="result"></pre>
+        </form>
+        <section id="history-panel" class="editor" hidden><div class="editor-heading"><h2>Version history</h2><button id="close-history" class="ghost">Close</button></div><div id="history-list"></div></section>
+        <div class="transfer"><a href="/api/export" target="_blank" rel="noopener">Export configuration</a><label class="file-button">Import as disabled drafts<input id="import-file" type="file" accept="application/json"></label></div>
+      </section>
+
+      <section id="view-profiles" class="view" hidden>
+        <div class="section-heading"><div><p class="eyebrow">Reusable snippets</p><h2>Profiles</h2></div></div>
+        <div id="profile-list" class="cards"></div>
+        <form id="umami-form" class="editor">
+          <p class="eyebrow">Structured integration</p><h2>Create an Umami profile</h2>
+          <div class="grid two"><label>Profile name<input id="umami-name" required></label><label>Website ID<input id="umami-website-id"></label><label>Analytics script URL<input id="umami-url" type="url" placeholder="https://analytics.example/script.js"></label><label>Recorder script URL<input id="umami-recorder-url" type="url"></label></div>
+          <div class="checks"><label><input id="umami-analytics" type="checkbox" checked> Analytics</label><label><input id="umami-recorder" type="checkbox"> Recorder</label></div>
+          <button type="submit">Create profile</button>
+        </form>
+        <form id="profile-form" class="editor"><p class="eyebrow">Reusable configuration</p><h2 id="profile-editor-title">Create a custom profile</h2><input id="profile-id" type="hidden"><label>Name<input id="profile-name" required></label><div class="checks"><label><input id="profile-enabled" type="checkbox" checked> Profile enabled</label></div><label>Injection items (JSON array; reorder with priority values)<textarea id="profile-items" rows="12" spellcheck="false">[]</textarea></label><label>Notes<textarea id="profile-notes" rows="3"></textarea></label><div class="form-actions"><button type="submit" id="save-profile">Create profile</button><button type="button" id="cancel-profile-edit" class="ghost" hidden>Cancel edit</button></div></form>
+      </section>
+
+      <section id="view-peers" class="view" hidden><div class="section-heading"><div><p class="eyebrow">Optional read-only API</p><h2>NetBird peers</h2></div><button id="load-peers">Refresh</button></div><p class="muted">Manual mode remains available. Active routes never depend on this API.</p><div id="peer-list" class="cards"></div></section>
+      <section id="view-preview" class="view" hidden><div class="section-heading"><div><p class="eyebrow">Safety check</p><h2>Injection preview</h2></div></div><p class="muted">Open a route draft in the editor first, then preview it against representative HTML and response headers.</p><form id="preview-form" class="editor"><label>Path<input id="preview-path" value="/"></label><label>Response CSP (optional)<input id="preview-csp"></label><label>Original HTML<textarea id="preview-html" rows="14" spellcheck="false"><!doctype html><html><head><title>Example</title></head><body><h1>Hello</h1></body></html></textarea></label><button type="submit">Preview current editor route</button></form><pre id="preview-result" class="result"></pre></section>
+      <section id="view-audit" class="view" hidden><div class="section-heading"><div><p class="eyebrow">Administrative actions</p><h2>Audit log</h2></div><button id="load-audit">Refresh</button></div><div id="audit-list" class="cards"></div></section>
+      <section id="view-settings" class="view" hidden>
+        <div class="section-heading"><div><p class="eyebrow">Administrator security</p><h2>Account and access settings</h2></div><button id="load-account" class="ghost">Refresh</button></div>
+        <div class="security-grid">
+          <article class="editor settings-card">
+            <h3>Current account</h3>
+            <p id="account-summary" class="muted">Loading account settings.</p>
+            <p id="admin-access-summary" class="muted"></p>
+            <p class="muted">Listener, TLS, and client-network changes require <code>sudo ./setup reconfigure</code> because they restart the service.</p>
+          </article>
+          <form id="credentials-form" class="editor settings-card">
+            <h3>Change username or password</h3>
+            <label>New administrator username<input id="settings-username" autocomplete="username" required></label>
+            <label>Current password<input id="credentials-current-password" type="password" autocomplete="current-password" required></label>
+            <label>New password <span class="muted">(leave empty to keep it)</span><input id="credentials-new-password" type="password" minlength="14" autocomplete="new-password"></label>
+            <label>Confirm new password<input id="credentials-confirm-password" type="password" minlength="14" autocomplete="new-password"></label>
+            <button type="submit">Save account and sign out</button>
+          </form>
+        </div>
+
+        <section id="two-factor-disabled" class="editor">
+          <p class="eyebrow">Recommended for remote administration</p><h3>Enable authenticator 2FA</h3>
+          <p class="muted">Use any RFC 6238 TOTP authenticator. The setup secret is shown only during enrollment.</p>
+          <form id="two-factor-start-form"><label>Current password<input id="two-factor-start-password" type="password" autocomplete="current-password" required></label><button type="submit">Start 2FA setup</button></form>
+          <div id="two-factor-enrollment" hidden>
+            <p>Enter this secret in your authenticator application:</p>
+            <pre id="two-factor-secret" class="result secret-result"></pre>
+            <label>Provisioning URI<textarea id="two-factor-uri" rows="3" readonly></textarea></label>
+            <form id="two-factor-confirm-form"><label>Six-digit authenticator code<input id="two-factor-confirm-code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" required></label><button type="submit">Verify and enable 2FA</button></form>
+          </div>
+        </section>
+
+        <section id="two-factor-enabled" class="editor" hidden>
+          <p class="eyebrow">Enabled</p><h3>Two-factor authentication</h3>
+          <p id="recovery-count" class="muted"></p>
+          <div class="security-grid">
+            <form id="recovery-form" class="settings-card"><h3>Replace recovery codes</h3><label>Current password<input id="recovery-password" type="password" autocomplete="current-password" required></label><label>Authenticator code<input id="recovery-code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" required></label><button type="submit">Generate replacement codes</button></form>
+            <form id="two-factor-disable-form" class="settings-card"><h3>Disable 2FA</h3><p class="muted">Disabling 2FA signs out every administrator session.</p><label>Current password<input id="two-factor-disable-password" type="password" autocomplete="current-password" required></label><label>Authenticator or recovery code<input id="two-factor-disable-code" autocomplete="one-time-code" required></label><button type="submit" class="danger">Disable 2FA and sign out</button></form>
+          </div>
+        </section>
+        <section id="recovery-output" class="editor" hidden><h3>Save these one-time recovery codes now</h3><p class="danger-banner">They will not be shown again. Store them in a password manager, not on this server.</p><pre id="recovery-codes" class="result secret-result"></pre></section>
+        <pre id="account-result" class="result"></pre>
+      </section>
+      <div id="toast" role="status" aria-live="polite"></div>
+    </section>
+  </main>
+</body>
+</html>

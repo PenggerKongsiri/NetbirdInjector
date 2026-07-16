@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "codex/**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.18.0
+          cache: npm
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - run: npm audit --audit-level=high
+      - run: npm run check
+      - run: npm run test:coverage
+
+  browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.18.0
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - run: npx playwright install --with-deps chromium
+      - run: npm run browser:test
+
+  sandbox:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.18.0
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - run: npm run sandbox:reset
+      - run: npm run sandbox:test
+      - run: npm run soak:short
+      - if: always()
+        run: npm run sandbox:report || true
+      - if: always()
+        run: npm run sandbox:destroy
+
+  linux-lifecycle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.18.0
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - name: Shell parsing and ShellCheck
+        run: |
+          bash -n setup packaging/*.sh tools/lifecycle/*.sh
+          sudo apt-get update
+          sudo apt-get install --yes shellcheck
+          shellcheck setup packaging/*.sh tools/lifecycle/*.sh
+      - run: npm run lifecycle:test
+
+  release-and-container:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.18.0
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - run: npm run release:build
+      - run: npm run release:inspect
+      - run: npm pack --dry-run --json
+      - run: docker build --file Containerfile .
+
+  codeql:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: github/codeql-action/init@641a925cfafe92d0fdf8b239ba4053e3f8d99d6d # v3
+        with:
+          languages: javascript-typescript
+      - uses: github/codeql-action/analyze@641a925cfafe92d0fdf8b239ba4053e3f8d99d6d # v3

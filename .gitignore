@@ -1,0 +1,13 @@
+node_modules/
+.agents/
+data/
+backups/
+coverage/
+dist/
+*.db
+*.db-shm
+*.db-wal
+*.log
+.env
+config/config.json
+test-results/

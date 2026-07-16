@@ -1,0 +1,19 @@
+{
+  "proxy": { "listen": "0.0.0.0", "port": 8080, "externalProtocol": "https", "maxHeaderBytes": 16384, "maxRequestBytes": 1048576 },
+  "admin": {
+    "listen": "0.0.0.0", "port": 9090,
+    "passwordHash": "scrypt$32768$8$1$aP-jY57e3xhzvFK1t7Jr_w$VHY82FMQHhjb7E51Qqw_LNgsHKL5AoARsm8UUXSpf2g",
+    "allowRemote": true, "cookieSecure": true, "sessionMinutes": 30
+  },
+  "storage": { "database": "/var/lib/netbird-injector-manager/state.db" },
+  "network": {
+    "allowedTargetCidrs": ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"],
+    "allowedPorts": [8081, 8443],
+    "trustedIngressCidrs": ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+  },
+  "netbird": {
+    "mode": "api", "apiBaseUrl": "http://fake-netbird-api:8082", "tokenFile": "/var/lib/netbird-injector-manager/fake-netbird.token",
+    "caFile": "", "allowInsecureApi": true, "writeEnabled": false, "cacheSeconds": 1, "cliPath": "/missing/netbird"
+  },
+  "logging": { "level": "debug" }
+}

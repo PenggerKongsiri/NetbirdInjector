@@ -104,7 +104,8 @@ validate_platform() {
     *) die "this bootstrap supports Ubuntu or Debian systemd hosts; detected ${ID:-unknown}" ;;
   esac
   command -v apt-get >/dev/null || die "apt-get is required"
-  command -v systemctl >/dev/null && [[ -d /run/systemd/system ]] || die "a booted systemd host is required"
+  command -v systemctl >/dev/null || die "a booted systemd host is required"
+  [[ -d /run/systemd/system ]] || die "a booted systemd host is required"
   case "$(uname -m)" in
     x86_64|amd64|aarch64|arm64) ;;
     *) die "only Linux x86_64 and arm64 are supported by this bootstrap" ;;

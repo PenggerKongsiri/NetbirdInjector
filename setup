@@ -18,7 +18,10 @@ say() { printf '%s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 need_root() { [[ "${EUID}" -eq 0 ]] || die "this command must run as root"; }
 need_linux() { [[ "$(uname -s)" == "Linux" ]] || die "native installation currently supports Linux only"; }
-need_systemd() { command -v systemctl >/dev/null && [[ -d /run/systemd/system ]] || die "systemd is required for native lifecycle commands"; }
+need_systemd() {
+  command -v systemctl >/dev/null || die "systemd is required for native lifecycle commands"
+  [[ -d /run/systemd/system ]] || die "systemd is required for native lifecycle commands"
+}
 
 check_node() {
   command -v node >/dev/null || die "Node.js 24.15 or newer is required"

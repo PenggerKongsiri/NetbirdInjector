@@ -7,7 +7,8 @@ LOG_FILE="/var/log/netbird-injector-manager.mock.log"
 running() { [[ -f "${PID_FILE}" ]] && kill -0 "$(<"${PID_FILE}")" 2>/dev/null; }
 start_service() {
   running && return
-  NIM_CONFIG=/etc/netbird-injector-manager/config.json nohup /usr/bin/node --jitless --disable-proto=throw \
+  PATH=/usr/local/bin:/usr/bin:/bin NIM_CONFIG=/etc/netbird-injector-manager/config.json \
+    nohup /usr/bin/env node --jitless --disable-proto=throw \
     /opt/netbird-injector-manager/current/src/main.mjs >> "${LOG_FILE}" 2>&1 &
   printf '%s\n' "$!" > "${PID_FILE}"
 }

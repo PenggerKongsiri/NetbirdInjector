@@ -9,8 +9,9 @@ Type=simple
 User=netbird-injector
 Group=netbird-injector
 WorkingDirectory=/opt/netbird-injector-manager/current
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
 Environment=NIM_CONFIG=/etc/netbird-injector-manager/config.json
-ExecStart=/usr/bin/node --jitless --disable-proto=throw /opt/netbird-injector-manager/current/src/main.mjs
+ExecStart=/usr/bin/env node --jitless --disable-proto=throw /opt/netbird-injector-manager/current/src/main.mjs
 Restart=on-failure
 RestartSec=3s
 TimeoutStopSec=20s

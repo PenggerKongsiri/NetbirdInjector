@@ -12,6 +12,8 @@ health() {
 }
 
 cd "${WORKSPACE}"
+[[ "$(command -v node)" == "/usr/local/bin/node" ]]
+[[ ! -e /usr/bin/node ]]
 bash -n setup install.sh bootstrap-ubuntu.sh packaging/post-install-verify.sh packaging/collect-logs.sh tools/lifecycle/systemctl tools/lifecycle/run.sh
 ./install.sh --help >/dev/null
 bash -s -- --help < ./install.sh >/dev/null

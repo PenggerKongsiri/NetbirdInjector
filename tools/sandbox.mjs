@@ -7,16 +7,24 @@ if (!/^[a-z0-9][a-z0-9_-]{0,40}$/.test(project)) throw new Error('NIM_SANDBOX_PR
 const context = process.env.NIM_DOCKER_CONTEXT || (process.platform === 'win32' ? 'desktop-linux' : '');
 const enginePrefix = context ? ['--context', context] : [];
 const prefix = [...(context ? ['--context', context] : []), 'compose', '-p', project, '-f', composeFile];
+const captureMaxBuffer = 4 * 1024 * 1024;
+const evidenceLogTailLines = 2_000;
 
 function docker(args, { capture = false, allowFailure = false } = {}) {
-  const result = spawnSync('docker', [...prefix, ...args], { encoding: capture ? 'utf8' : undefined, stdio: capture ? ['ignore', 'pipe', 'pipe'] : 'inherit', windowsHide: true });
+  const result = spawnSync('docker', [...prefix, ...args], {
+    encoding: capture ? 'utf8' : undefined, stdio: capture ? ['ignore', 'pipe', 'pipe'] : 'inherit',
+    maxBuffer: captureMaxBuffer, windowsHide: true,
+  });
   if (result.error) throw new Error(`Docker is unavailable: ${result.error.message}`);
   if (result.status !== 0 && !allowFailure) throw new Error(capture ? result.stderr.trim() : `docker compose failed with status ${result.status}`);
   return result;
 }
 
 function engine(args, { capture = false } = {}) {
-  const result = spawnSync('docker', [...enginePrefix, ...args], { encoding: capture ? 'utf8' : undefined, stdio: capture ? ['ignore', 'pipe', 'pipe'] : 'inherit', windowsHide: true });
+  const result = spawnSync('docker', [...enginePrefix, ...args], {
+    encoding: capture ? 'utf8' : undefined, stdio: capture ? ['ignore', 'pipe', 'pipe'] : 'inherit',
+    maxBuffer: captureMaxBuffer, windowsHide: true,
+  });
   if (result.error) throw new Error(`Docker is unavailable: ${result.error.message}`);
   if (result.status !== 0) throw new Error(capture ? result.stderr.trim() : `docker failed with status ${result.status}`);
   return result;
@@ -30,14 +38,15 @@ function reportEvidence() {
     restartCount: container.RestartCount, oomKilled: container.State.OOMKilled,
   }));
   const stats = ids.length ? engine(['stats', '--no-stream', '--format', '{{json .}}', ...ids], { capture: true }).stdout.trim().split(/\r?\n/).filter(Boolean).map(JSON.parse) : [];
-  const logs = docker(['logs', '--no-color'], { capture: true }).stdout;
+  const logs = docker(['logs', '--no-color', '--tail', String(evidenceLogTailLines)], { capture: true }).stdout;
   const count = (pattern) => (logs.match(pattern) ?? []).length;
   process.stdout.write(`${JSON.stringify({
     sandboxEvidence: {
       states,
       resources: stats.map((entry) => ({ name: entry.Name, cpu: entry.CPUPerc, memory: entry.MemUsage, pids: entry.PIDs, network: entry.NetIO })),
       logs: {
-        bytes: Buffer.byteLength(logs), injectionWarnings: count(/proxy\.injection_skipped/g), upstreamErrors: count(/proxy\.upstream_error/g),
+        tailLinesRequested: evidenceLogTailLines, bytes: Buffer.byteLength(logs),
+        injectionWarnings: count(/proxy\.injection_skipped/g), upstreamErrors: count(/proxy\.upstream_error/g),
         databaseErrors: count(/database|SQLITE_/gi), fatalErrors: count(/service\.fatal|service\.start_failed/g),
         suspectedSecretLeaks: count(/authorization|cookie|netbird[_ -]?token|password\s*[=:]/gi),
       },

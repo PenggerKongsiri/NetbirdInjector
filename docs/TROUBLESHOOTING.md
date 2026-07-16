@@ -8,6 +8,8 @@ sudo ./setup doctor
 sudo journalctl -u netbird-injector-manager --since "30 minutes ago"
 ```
 
+If systemd reports `status=203/EXEC` or `/usr/bin/node: No such file or directory`, do not create an unmanaged symlink. Update to v0.1.5 or newer and run the repair path; the service unit safely searches the supported root-owned `/usr/local/bin` and `/usr/bin` locations.
+
 ## `421 Misdirected Request`
 
 No active route exactly matches the incoming Host. Confirm NetBird preserves the public Host, the route is enabled and activated, and there is no trailing/alternate domain mismatch. This fail-closed result is intentional.

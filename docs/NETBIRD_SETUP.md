@@ -4,8 +4,8 @@ NetBird configuration is deliberately manual. The application has no NetBird wri
 
 ## Staging sequence
 
-1. Join a disposable Ubuntu host to the intended NetBird account and place it in a dedicated injector group.
-2. Install the verified release and keep the proxy listener private on TCP 8080. Keep admin on loopback TCP 9090 by default; if private HTTPS administration is required, follow [ADMIN_ACCESS.md](ADMIN_ACCESS.md) and permit only the administrator group.
+1. Join a disposable Ubuntu host to the intended NetBird account and place it in a dedicated injector group. The [guided bootstrap](INSTALL.md#guided-ubuntudebian-bootstrap) can install the client and run interactive `netbird up`; setup-key enrollment remains a separate dashboard-generated operation.
+2. Install the verified release and keep the proxy listener private on TCP 8080. The bootstrap runs the same verified native installer. Keep admin on loopback TCP 9090 by default; if private HTTPS administration is required, follow [ADMIN_ACCESS.md](ADMIN_ACCESS.md) and permit only the administrator group.
 3. Create the least-privilege policies in [NETBIRD_POLICIES.md](NETBIRD_POLICIES.md).
 4. In NetBird Reverse Proxy, create a new HTTP-mode service for `<TEST_DOMAIN>` whose backend is the injector peer on port 8080.
 5. Preserve the incoming public Host value. The injector selects only an exact configured hostname; any other Host receives 421.

@@ -7,4 +7,5 @@
 *.yaml text eol=lf
 *.yml text eol=lf
 Containerfile text eol=lf
+bootstrap-ubuntu.sh text eol=lf
 setup text eol=lf

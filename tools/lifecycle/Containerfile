@@ -3,7 +3,7 @@ FROM node:24.18.0-bookworm-slim
 COPY . /workspace
 COPY tools/lifecycle/systemctl /usr/local/bin/systemctl
 RUN ln -sf /usr/local/bin/node /usr/bin/node \
-    && chmod 0755 /workspace/setup /workspace/packaging/*.sh /workspace/tools/lifecycle/*.sh /usr/local/bin/systemctl \
+    && chmod 0755 /workspace/setup /workspace/bootstrap-ubuntu.sh /workspace/packaging/*.sh /workspace/tools/lifecycle/*.sh /usr/local/bin/systemctl \
     && mkdir -p /run/systemd/system
 
 CMD ["bash", "/workspace/tools/lifecycle/run.sh"]

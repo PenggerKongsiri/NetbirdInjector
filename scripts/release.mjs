@@ -7,11 +7,12 @@ import { fileURLToPath } from 'node:url';
 export const RUNTIME_ENTRIES = Object.freeze([
   'src', 'scripts', 'packaging', 'docs', 'config', 'package.json', 'package-lock.json', 'README.md', 'LICENSE',
   'SECURITY.md', 'CONTRIBUTING.md', 'AGENTS.md', 'Containerfile', 'compose.example.yaml', 'setup',
+  'bootstrap-ubuntu.sh',
 ]);
 
 const FORBIDDEN_BASENAMES = new Set(['.env', 'state.db', 'state.db-wal', 'state.db-shm']);
 const FORBIDDEN_SEGMENTS = new Set(['node_modules', 'coverage', 'backups', 'test-results']);
-const TEXT_EXTENSIONS = new Set(['', '.css', '.html', '.js', '.json', '.md', '.mjs', '.service', '.txt', '.yaml', '.yml']);
+const TEXT_EXTENSIONS = new Set(['', '.css', '.html', '.js', '.json', '.md', '.mjs', '.service', '.sh', '.txt', '.yaml', '.yml']);
 const MACHINE_PATH_PATTERN = new RegExp([
   'C:\\\\' + 'Users\\\\[^\\\\\\r\\n]+',
   '/' + 'Users/[^/\\r\\n]+',
@@ -78,7 +79,7 @@ export function verifyRuntime(rootArg) {
     const expected = manifest.files[name];
     if (sha256(path) !== expected.sha256 || statSync(path).size !== expected.bytes) throw new Error(`release checksum mismatch: ${name}`);
   }
-  for (const required of ['src/main.mjs', 'setup', 'packaging/netbird-injector-manager.service', 'config/config.example.json', 'LICENSE']) {
+  for (const required of ['src/main.mjs', 'setup', 'bootstrap-ubuntu.sh', 'packaging/netbird-injector-manager.service', 'config/config.example.json', 'LICENSE']) {
     if (!Object.hasOwn(manifest.files, required)) throw new Error(`release is missing required file: ${required}`);
   }
   return { root, fileCount: expectedNames.length, manifest };

@@ -65,7 +65,7 @@ install_release() {
   timestamp="$(date -u +%Y%m%dT%H%M%SZ)-$$"
   release="${OPT_DIR}/releases/${timestamp}"
   install -d -m 0755 "${release}"
-  for item in src scripts packaging docs config package.json package-lock.json README.md LICENSE SECURITY.md CONTRIBUTING.md AGENTS.md Containerfile compose.example.yaml setup RELEASE_MANIFEST.json; do
+  for item in src scripts packaging docs config package.json package-lock.json README.md LICENSE SECURITY.md CONTRIBUTING.md AGENTS.md Containerfile compose.example.yaml bootstrap-ubuntu.sh setup RELEASE_MANIFEST.json; do
     [[ -e "${SOURCE_DIR}/${item}" ]] && cp -a -- "${SOURCE_DIR}/${item}" "${release}/"
   done
   chown -R root:root "${release}"

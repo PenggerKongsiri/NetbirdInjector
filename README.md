@@ -28,6 +28,31 @@ Do not replace a working route yet. Use the parallel test-domain migration in [d
 - Native lifecycle program for install, update, verified/manual rollback, reconfigure, repair, health, status, doctor/diagnostics, backup, restore, and preserving uninstall.
 - Rootless, capability-free experimental container definition; no Docker socket and no privileged mode.
 
+## Guided Ubuntu/Debian VM installation
+
+The simplest staging path is the reviewed repository bootstrap. It supports x86_64 and arm64 Ubuntu/Debian hosts booted with systemd. Obtain the complete repository first; do not pipe a remote script directly into a root shell:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y git
+git clone https://github.com/PenggerKongsiri/NetbirdInjector.git
+cd NetbirdInjector
+less bootstrap-ubuntu.sh
+chmod 0755 bootstrap-ubuntu.sh
+./bootstrap-ubuntu.sh
+```
+
+Run it as your normal sudo-capable user when possible. The script:
+
+- installs the OS tools, a compatible official Node.js 24 archive after SHA-256 verification, and the NetBird client through its signed apt repository;
+- guides `netbird up` enrollment without accepting or storing a setup key;
+- runs the locked dependency install, full test suite, high/critical dependency audit, release build, and release-manifest verification; and
+- starts the existing systemd installer, which asks for the administrator username, password, and loopback or private-HTTPS admin access mode.
+
+For a self-hosted NetBird deployment, either enter its HTTPS management URL when prompted or run `./bootstrap-ubuntu.sh --netbird-management-url https://netbird.example.com`. If this VM must be enrolled separately with a dashboard-generated setup-key command, do that first and then use `./bootstrap-ubuntu.sh --skip-netbird-connect`.
+
+The bootstrap deliberately does **not** create NetBird policies, DNS records, firewall rules, reverse-proxy services, Coolify/Traefik changes, or application routes. Follow [the NetBird setup guide](docs/NETBIRD_SETUP.md) after installation and begin with a parallel test hostname. Ubuntu/Debian VM validation is still an external pre-1.0 gate; see [the support matrix](docs/SUPPORT_MATRIX.md).
+
 ## Secure quick start for local evaluation
 
 Requirements: Node.js `24.15–24.x`. Node 24.18.0 is the tested development version.
@@ -49,9 +74,9 @@ NIM_CONFIG=./config/config.json node src/main.mjs
 
 Open the private UI through `http://127.0.0.1:9090`. The data-plane listener is `0.0.0.0:8080` by default.
 
-## Native installation
+## Manual native installation
 
-Copy a verified release or checked-out repository to the target Linux peer, inspect it, then run:
+If prerequisites and NetBird enrollment are already handled, copy a verified release or checked-out repository to the target Linux peer, inspect it, then run:
 
 ```bash
 chmod 0755 setup
@@ -59,7 +84,7 @@ sudo ./setup detect
 sudo ./setup install
 ```
 
-The installer creates the unprivileged `netbird-injector` account and asks for an administrator username, password, and access mode. The recommended mode keeps admin on loopback behind an SSH tunnel. An optional mode serves native HTTPS on one explicit RFC1918, NetBird CGNAT, or IPv6 ULA address, never a wildcard or public IP. It installs a hardened systemd unit and checks health. It does not touch NetBird, DNS, Coolify, Traefik, or current routes. See [the installation guide](docs/INSTALL.md) and [admin access/account guide](docs/ADMIN_ACCESS.md).
+The installer creates the unprivileged `netbird-injector` account and asks for an administrator username, password, and access mode. The recommended mode keeps admin on loopback behind an SSH tunnel. An optional mode serves native HTTPS on one explicit RFC1918, NetBird CGNAT, or IPv6 ULA address, never a wildcard or public IP. It installs a hardened systemd unit and checks health. It does not touch NetBird, DNS, firewall policy, Coolify, Traefik, or current routes. See [the installation guide](docs/INSTALL.md) and [admin access/account guide](docs/ADMIN_ACCESS.md).
 
 After signing in, open **Settings** to change the administrator username/password, enroll authenticator 2FA, save or replace one-time recovery codes, disable 2FA, and see the effective admin URL/client CIDRs. Listener, certificate, and network changes remain root-controlled through `sudo ./setup reconfigure` because they require a service restart.
 

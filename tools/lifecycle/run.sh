@@ -12,7 +12,18 @@ health() {
 }
 
 cd "${WORKSPACE}"
-bash -n setup packaging/post-install-verify.sh packaging/collect-logs.sh tools/lifecycle/systemctl tools/lifecycle/run.sh
+bash -n setup bootstrap-ubuntu.sh packaging/post-install-verify.sh packaging/collect-logs.sh tools/lifecycle/systemctl tools/lifecycle/run.sh
+./bootstrap-ubuntu.sh --help >/dev/null
+if ./bootstrap-ubuntu.sh --not-a-real-option >/tmp/bootstrap-invalid.log 2>&1; then
+  printf 'bootstrap unexpectedly accepted an unknown option\n' >&2
+  exit 1
+fi
+grep -F 'unknown option' /tmp/bootstrap-invalid.log >/dev/null
+if ./bootstrap-ubuntu.sh --netbird-management-url http://insecure.example --yes >/tmp/bootstrap-url.log 2>&1; then
+  printf 'bootstrap unexpectedly accepted an insecure management URL\n' >&2
+  exit 1
+fi
+grep -F 'must be an HTTPS URL' /tmp/bootstrap-url.log >/dev/null
 ./setup detect
 node scripts/release.mjs build
 RELEASE="${WORKSPACE}/dist/release/netbird-injector-manager"

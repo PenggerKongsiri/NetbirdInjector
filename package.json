@@ -15,6 +15,7 @@
     "SECURITY.md",
     "Containerfile",
     "compose.example.yaml",
+    "bootstrap-ubuntu.sh",
     "setup"
   ],
   "engines": {

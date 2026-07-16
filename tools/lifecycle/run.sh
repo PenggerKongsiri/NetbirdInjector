@@ -32,7 +32,7 @@ mkdir -p /tmp/archive-source /tmp/checkout-source
   SOURCE_DIR=/tmp/archive-source
   export SOURCE_DIR
   # Invoked indirectly by run_project_checks from the sourced bootstrap.
-  # shellcheck disable=SC2329
+  # shellcheck disable=SC2317,SC2329
   npm() { printf '%s\n' "$*" >> /tmp/archive-check.calls; }
   run_project_checks
 ) > /tmp/archive-check.log
@@ -46,7 +46,7 @@ touch /tmp/checkout-source/.git
   SOURCE_DIR=/tmp/checkout-source
   export SOURCE_DIR
   # Invoked indirectly by run_project_checks from the sourced bootstrap.
-  # shellcheck disable=SC2329
+  # shellcheck disable=SC2317,SC2329
   npm() { printf '%s\n' "$*" >> /tmp/checkout-check.calls; }
   run_project_checks
 ) > /tmp/checkout-check.log

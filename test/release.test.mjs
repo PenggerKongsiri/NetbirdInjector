@@ -15,6 +15,7 @@ test('runtime release is manifest-verified and excludes tests, private keys, and
   assert.equal(existsSync(join(output, 'test')), false);
   assert.equal(existsSync(join(output, 'tools')), false);
   assert.equal(existsSync(join(output, 'bootstrap-ubuntu.sh')), true);
+  assert.equal(existsSync(join(output, 'install.sh')), true);
   assert.equal(existsSync(join(output, 'test', 'fixtures', 'tls', 'server-key.pem')), false);
   const manifest = readFileSync(join(output, 'RELEASE_MANIFEST.json'), 'utf8');
   assert.doesNotMatch(manifest, /server-key\.pem|PRIVATE KEY|C:\\Users\\/i);

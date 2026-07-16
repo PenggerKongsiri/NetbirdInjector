@@ -12,7 +12,36 @@
 
 ## Guided Ubuntu/Debian bootstrap
 
-For a new disposable staging VM, install Git only so you can obtain and inspect the whole repository, then run the guided bootstrap as a normal sudo-capable user:
+After the repository is public, a new disposable staging VM can use the standalone remote entry script:
+
+```bash
+curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+  https://raw.githubusercontent.com/PenggerKongsiri/NetbirdInjector/main/install.sh | bash
+```
+
+Do not prefix that command with `sudo`. The bootstrap requests sudo only for OS packages, system files, and systemd actions; npm checks and release construction run as the invoking user. For self-hosted NetBird:
+
+```bash
+curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+  https://raw.githubusercontent.com/PenggerKongsiri/NetbirdInjector/main/install.sh \
+  | bash -s -- --netbird-management-url https://netbird.example.com
+```
+
+The remote script performs no privileged changes itself. It resolves `main` to an immutable 40-character Git commit using GitHub's API, downloads only that commit's archive, rejects files outside the expected top-level directory plus links/unsupported archive entries, prints the source SHA-256, and launches `bootstrap-ubuntu.sh` interactively. Temporary source is removed after the installation; the installed manifest-verified release remains under `/opt/netbird-injector-manager`.
+
+This protects against a moving branch during one installation and malformed archive layout. It does **not** make `curl | bash` independently trusted: the command still trusts the repository owner, `main`, GitHub, DNS, and TLS. For review before execution, download the entry script first:
+
+```bash
+installer="$(mktemp)"
+curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+  --output "$installer" \
+  https://raw.githubusercontent.com/PenggerKongsiri/NetbirdInjector/main/install.sh
+less "$installer"
+bash "$installer"
+rm -f "$installer"
+```
+
+The complete-checkout path works while the repository is private and provides the easiest way to inspect all code before execution:
 
 ```bash
 sudo apt-get update
@@ -24,7 +53,7 @@ chmod 0755 bootstrap-ubuntu.sh
 ./bootstrap-ubuntu.sh
 ```
 
-Do not use `curl | sudo bash`. Reviewing a checked-out script and repository keeps the code, lockfile, documentation, and release builder together.
+Never use `curl | sudo bash`. Reviewing a checked-out script and repository keeps the code, lockfile, documentation, and release builder together.
 
 The bootstrap accepts Ubuntu or Debian with a booted systemd instance on x86_64 or arm64. It performs these steps in order:
 

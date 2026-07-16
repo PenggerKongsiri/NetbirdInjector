@@ -45,12 +45,15 @@ services:
     tmpfs: ["/tmp:rw,noexec,nosuid,size=16m,mode=1777"]
     volumes:
       - state:/var/lib/netbird-injector-manager
-    networks: [front, back]
+    networks:
+      front:
+        ipv4_address: 172.30.250.10
+      back: {}
     depends_on:
       fake-upstream: { condition: service_healthy }
       fake-netbird-api: { condition: service_healthy }
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:9090/healthz',{signal:AbortSignal.timeout(1000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "const r=require('node:https').get({hostname:'172.30.250.10',port:9090,path:'/healthz',rejectUnauthorized:false,timeout:1000},x=>{x.resume();process.exit(x.statusCode===200?0:1)});r.on('timeout',()=>r.destroy());r.on('error',()=>process.exit(1))"]
       interval: 2s
       timeout: 2s
       retries: 30
@@ -92,6 +95,8 @@ services:
 networks:
   front:
     internal: true
+    ipam:
+      config: [{ subnet: 172.30.250.0/24 }]
     labels: { org.opencontainers.image.title: "NetBird Injector disposable sandbox front" }
   back:
     internal: true

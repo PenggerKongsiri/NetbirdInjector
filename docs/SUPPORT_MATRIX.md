@@ -12,6 +12,7 @@ Status is intentionally conservative. "Designed" means code/configuration exists
 | Ubuntu systemd | Designed; experimental | Full lifecycle VM test required |
 | Debian systemd | Designed; experimental | Full lifecycle VM test required |
 | Guided Ubuntu/Debian bootstrap | Designed; parser/release locally tested; experimental | Real apt, checksum download, NetBird enrollment, and native systemd VM run required |
+| Public `curl` entry installer | Designed; ShellCheck/archive-policy locally tested; experimental | Public GitHub API/archive download and complete disposable-VM run required |
 | Unprivileged Linux container with host network | Locally built; experimental | UID 10001/capability-free sandbox passes; real Linux NetBird host required |
 | Non-systemd Linux native | Unsupported | Lifecycle tooling assumes systemd |
 | Kubernetes | Unsupported | No manifests, HA coordination, or readiness validation |

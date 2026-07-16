@@ -65,7 +65,7 @@ install_release() {
   timestamp="$(date -u +%Y%m%dT%H%M%SZ)-$$"
   release="${OPT_DIR}/releases/${timestamp}"
   install -d -m 0755 "${release}"
-  for item in src scripts packaging docs config package.json package-lock.json README.md LICENSE SECURITY.md CONTRIBUTING.md AGENTS.md Containerfile compose.example.yaml bootstrap-ubuntu.sh setup RELEASE_MANIFEST.json; do
+  for item in src scripts packaging docs config package.json package-lock.json README.md LICENSE SECURITY.md CONTRIBUTING.md AGENTS.md Containerfile compose.example.yaml bootstrap-ubuntu.sh install.sh setup RELEASE_MANIFEST.json; do
     [[ -e "${SOURCE_DIR}/${item}" ]] && cp -a -- "${SOURCE_DIR}/${item}" "${release}/"
   done
   chown -R root:root "${release}"
@@ -177,6 +177,8 @@ cmd_install() {
   systemctl enable --now "${APP}.service"
   health_check || die "service did not become healthy; inspect: journalctl -u ${APP}"
   local admin_url
+  # JavaScript template expressions are intentionally protected from the shell.
+  # shellcheck disable=SC2016
   admin_url="$(node -e 'const c=require(process.argv[1]);const p=c.admin.tlsCertFile?"https":"http";const h=c.admin.listen.includes(":")?`[${c.admin.listen}]`:c.admin.listen;process.stdout.write(`${p}://${h}:${c.admin.port}`)' "${CONFIG_FILE}")"
   say "Installed successfully. Admin UI: ${admin_url}; proxy listener: 0.0.0.0:8080."
   is_loopback_address "$(node -p 'require(process.argv[1]).admin.listen' "${CONFIG_FILE}")" && say "Use an SSH tunnel for admin access: ssh -L 9090:127.0.0.1:9090 <USER>@<HOST>"

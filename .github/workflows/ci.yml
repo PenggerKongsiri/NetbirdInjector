@@ -23,6 +23,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24.18.0
@@ -76,10 +78,10 @@ jobs:
       - run: npm ci --ignore-scripts
       - name: Shell parsing and ShellCheck
         run: |
-          bash -n setup packaging/*.sh tools/lifecycle/*.sh
+          bash -n setup install.sh bootstrap-ubuntu.sh packaging/*.sh tools/lifecycle/*.sh
           sudo apt-get update
           sudo apt-get install --yes shellcheck
-          shellcheck setup packaging/*.sh tools/lifecycle/*.sh
+          shellcheck setup install.sh bootstrap-ubuntu.sh packaging/*.sh tools/lifecycle/*.sh
       - run: npm run lifecycle:test
 
   release-and-container:
@@ -98,6 +100,8 @@ jobs:
       - run: docker build --file Containerfile .
 
   codeql:
+    # Public repositories include CodeQL code scanning. Private repositories need GitHub Code Security/GHAS.
+    if: ${{ github.event.repository.private == false }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read

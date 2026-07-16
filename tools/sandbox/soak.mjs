@@ -1,4 +1,5 @@
 import http from 'node:http';
+import https from 'node:https';
 
 const numberArg = (name, fallback) => { const index = process.argv.indexOf(name); const value = index >= 0 ? Number(process.argv[index + 1]) : fallback; if (!Number.isFinite(value) || value <= 0) throw new Error(`${name} must be positive`); return value; };
 const durationSeconds = numberArg('--duration-seconds', 20);
@@ -17,7 +18,7 @@ function adminCall(path, { method = 'GET', body, cookie } = {}) {
     const headers = { connection: 'close' };
     if (payload) { headers['content-type'] = 'application/json'; headers['content-length'] = payload.length; }
     if (cookie) headers.cookie = cookie;
-    const req = http.request({ hostname: 'injector', port: 9090, path, method, headers, agent: false }, (res) => {
+    const req = https.request({ hostname: '172.30.250.10', port: 9090, path, method, headers, rejectUnauthorized: false, agent: false }, (res) => {
       const chunks = [];
       res.on('data', (chunk) => chunks.push(chunk));
       res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, json: () => JSON.parse(Buffer.concat(chunks).toString()) }));

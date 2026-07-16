@@ -12,7 +12,17 @@ health() {
 }
 
 cd "${WORKSPACE}"
-bash -n setup bootstrap-ubuntu.sh packaging/post-install-verify.sh packaging/collect-logs.sh tools/lifecycle/systemctl tools/lifecycle/run.sh
+bash -n setup install.sh bootstrap-ubuntu.sh packaging/post-install-verify.sh packaging/collect-logs.sh tools/lifecycle/systemctl tools/lifecycle/run.sh
+./install.sh --help >/dev/null
+bash -s -- --help < ./install.sh >/dev/null
+source ./install.sh
+printf '%s\n' 'NetbirdInjector-0123456789012345678901234567890123456789/' 'NetbirdInjector-0123456789012345678901234567890123456789/README.md' > /tmp/safe-archive.list
+validate_archive_list /tmp/safe-archive.list 'NetbirdInjector-0123456789012345678901234567890123456789/'
+printf '%s\n' 'NetbirdInjector-0123456789012345678901234567890123456789/../escape' > /tmp/unsafe-archive.list
+if (validate_archive_list /tmp/unsafe-archive.list 'NetbirdInjector-0123456789012345678901234567890123456789/') 2>/dev/null; then
+  printf 'remote installer unexpectedly accepted archive traversal\n' >&2
+  exit 1
+fi
 ./bootstrap-ubuntu.sh --help >/dev/null
 if ./bootstrap-ubuntu.sh --not-a-real-option >/tmp/bootstrap-invalid.log 2>&1; then
   printf 'bootstrap unexpectedly accepted an unknown option\n' >&2

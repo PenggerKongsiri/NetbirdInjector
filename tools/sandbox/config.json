@@ -1,9 +1,11 @@
 {
   "proxy": { "listen": "0.0.0.0", "port": 8080, "externalProtocol": "https", "maxHeaderBytes": 16384, "maxRequestBytes": 1048576 },
   "admin": {
-    "listen": "0.0.0.0", "port": 9090,
+    "listen": "172.30.250.10", "port": 9090,
     "passwordHash": "scrypt$32768$8$1$aP-jY57e3xhzvFK1t7Jr_w$VHY82FMQHhjb7E51Qqw_LNgsHKL5AoARsm8UUXSpf2g",
-    "allowRemote": true, "cookieSecure": true, "sessionMinutes": 30
+    "allowRemote": true, "cookieSecure": true, "sessionMinutes": 30,
+    "allowedCidrs": ["172.30.250.0/24"],
+    "tlsCertFile": "../../test/fixtures/tls/server.pem", "tlsKeyFile": "../../test/fixtures/tls/server-key.pem"
   },
   "storage": { "database": "/var/lib/netbird-injector-manager/state.db" },
   "network": {

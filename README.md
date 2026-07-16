@@ -30,7 +30,38 @@ Do not replace a working route yet. Use the parallel test-domain migration in [d
 
 ## Guided Ubuntu/Debian VM installation
 
-The simplest staging path is the reviewed repository bootstrap. It supports x86_64 and arm64 Ubuntu/Debian hosts booted with systemd. Obtain the complete repository first; do not pipe a remote script directly into a root shell:
+The simplest staging path is the guided installer. It supports x86_64 and arm64 Ubuntu/Debian hosts booted with systemd.
+
+After this repository is public, the requested one-command installer is:
+
+```bash
+curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+  https://raw.githubusercontent.com/PenggerKongsiri/NetbirdInjector/main/install.sh | bash
+```
+
+Run it as a normal sudo-capable user, without `sudo` before `curl` or `bash`. The small remote entry script resolves `main` to one immutable Git commit through GitHub's API, downloads that exact source archive, rejects unexpected paths/links, prints the commit and archive SHA-256, and then opens the full interactive bootstrap through `/dev/tty`.
+
+For self-hosted NetBird, pass the management URL through to the bootstrap:
+
+```bash
+curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+  https://raw.githubusercontent.com/PenggerKongsiri/NetbirdInjector/main/install.sh \
+  | bash -s -- --netbird-management-url https://netbird.example.com
+```
+
+`curl | bash` necessarily trusts the repository owner, the current `main` branch, GitHub, DNS, and TLS at execution time. No project can remove that trust. The safer review-first form is:
+
+```bash
+installer="$(mktemp)"
+curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+  --output "$installer" \
+  https://raw.githubusercontent.com/PenggerKongsiri/NetbirdInjector/main/install.sh
+less "$installer"
+bash "$installer"
+rm -f "$installer"
+```
+
+The complete-checkout path remains available, including while the repository is private:
 
 ```bash
 sudo apt-get update
@@ -49,7 +80,7 @@ Run it as your normal sudo-capable user when possible. The script:
 - runs the locked dependency install, full test suite, high/critical dependency audit, release build, and release-manifest verification; and
 - starts the existing systemd installer, which asks for the administrator username, password, and loopback or private-HTTPS admin access mode.
 
-For a self-hosted NetBird deployment, either enter its HTTPS management URL when prompted or run `./bootstrap-ubuntu.sh --netbird-management-url https://netbird.example.com`. If this VM must be enrolled separately with a dashboard-generated setup-key command, do that first and then use `./bootstrap-ubuntu.sh --skip-netbird-connect`.
+For a self-hosted NetBird deployment, either enter its HTTPS management URL when prompted or pass `--netbird-management-url`. If this VM must be enrolled separately with a dashboard-generated setup-key command, do that first and then use `--skip-netbird-connect`.
 
 The bootstrap deliberately does **not** create NetBird policies, DNS records, firewall rules, reverse-proxy services, Coolify/Traefik changes, or application routes. Follow [the NetBird setup guide](docs/NETBIRD_SETUP.md) after installation and begin with a parallel test hostname. Ubuntu/Debian VM validation is still an external pre-1.0 gate; see [the support matrix](docs/SUPPORT_MATRIX.md).
 

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import https from 'node:https';
 import net from 'node:net';
 import { gunzipSync } from 'node:zlib';
 
@@ -24,7 +25,7 @@ function admin(path, { method = 'GET', body, cookie, csrf } = {}) {
     const headers = { connection: 'close', ...(payload ? { 'content-type': 'application/json', 'content-length': payload.length } : {}) };
     if (cookie) headers.cookie = cookie;
     if (csrf) headers['x-csrf-token'] = csrf;
-    const req = http.request({ hostname: 'injector', port: 9090, path, method, headers, agent: false }, (res) => {
+    const req = https.request({ hostname: '172.30.250.10', port: 9090, path, method, headers, rejectUnauthorized: false, agent: false }, (res) => {
       const chunks = []; res.on('data', (chunk) => chunks.push(chunk)); res.on('end', () => { const text = Buffer.concat(chunks).toString(); resolve({ status: res.statusCode, headers: res.headers, json: () => JSON.parse(text) }); });
     });
     req.on('error', reject); if (payload) req.write(payload); req.end();

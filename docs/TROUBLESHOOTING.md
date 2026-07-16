@@ -10,6 +10,19 @@ sudo journalctl -u netbird-injector-manager --since "30 minutes ago"
 
 If systemd reports `status=203/EXEC` or `/usr/bin/node: No such file or directory`, do not create an unmanaged symlink. Update to v0.1.5 or newer and run the repair path; the service unit safely searches the supported root-owned `/usr/local/bin` and `/usr/bin` locations.
 
+## Retry reports `unable to open database file`
+
+Update to v0.1.6 or newer and rerun the same guided installer. This can happen when the original service never started, so `config.json` exists but `/var/lib/netbird-injector-manager/state.db` was never created. The newer installer detects that exact missing-first-state condition before backup, explains it, and asks for confirmation.
+
+Approve only if the first install never became usable and never held routes or later account/2FA changes. The recovery preserves the configured administrator hash and TLS files, initializes the missing empty database as the service user, creates the ordinary pre-update backup, and continues through health checks. It refuses a live service, a database symlink, a nonstandard database path, or an earlier backup manifest. If any of those apply, do not delete files to bypass the check; verify and restore the prior backup or investigate the state loss.
+
+Installation, repair, and update failures now print a bounded systemd status/journal summary. If another error remains, save that summary plus these redacted commands:
+
+```bash
+sudo /opt/netbird-injector-manager/current/setup status
+sudo /opt/netbird-injector-manager/current/setup doctor
+```
+
 ## `421 Misdirected Request`
 
 No active route exactly matches the incoming Host. Confirm NetBird preserves the public Host, the route is enabled and activated, and there is no trailing/alternate domain mismatch. This fail-closed result is intentional.

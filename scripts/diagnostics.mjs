@@ -1,7 +1,30 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import http from 'node:http';
+import https from 'node:https';
 import { loadConfig } from '../src/config.mjs';
 import { Store } from '../src/lib/store.mjs';
+
+function probeService(config) {
+  const tls = Boolean(config.admin.tlsCertFile);
+  const client = tls ? https : http;
+  return new Promise((resolve, reject) => {
+    const request = client.request({
+      host: config.admin.listen,
+      port: config.admin.port,
+      path: '/healthz',
+      method: 'GET',
+      rejectUnauthorized: false,
+      timeout: 2000,
+    }, (response) => {
+      response.resume();
+      resolve({ ok: response.statusCode === 200, status: response.statusCode });
+    });
+    request.on('timeout', () => request.destroy(new Error('service health probe timed out')));
+    request.on('error', reject);
+    request.end();
+  });
+}
 
 const configPath = process.argv[2] || process.env.NIM_CONFIG || './config/config.json';
 const result = { generatedAt: new Date().toISOString(), node: process.version, platform: process.platform, architecture: process.arch, checks: {} };
@@ -21,8 +44,7 @@ try {
     result.checks.netbirdCli = { ok: true, managementConnected: Boolean(status.management?.connected ?? status.management?.Connected) };
   } catch { result.checks.netbirdCli = { ok: false, optional: true }; }
   try {
-    const response = await fetch(`http://${loaded.config.admin.listen}:${loaded.config.admin.port}/healthz`, { signal: AbortSignal.timeout(2000) });
-    result.checks.runningService = { ok: response.ok, status: response.status };
+    result.checks.runningService = await probeService(loaded.config);
   } catch { result.checks.runningService = { ok: false }; }
 } catch (error) {
   result.checks.configuration = { ok: false, error: error.message };

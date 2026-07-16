@@ -14,6 +14,8 @@ This creates a new mode-0700 directory under `/var/backups/netbird-injector-mana
 
 It intentionally excludes the NetBird PAT and native admin TLS private key. Keep both in a separate secret vault. A backup is still highly sensitive because it reveals internal topology, injected scripts, password hashes, TOTP seed, hashed recovery codes, and history. Encrypt off-host copies and restrict restore access.
 
+Ordinary backup never creates a missing application database. The narrowly scoped interrupted-first-install recovery in `setup update` requires explicit approval, initializes only the absent standard managed database, and then invokes this same backup format. If an earlier backup manifest exists, empty-state recovery is refused so the operator can verify and restore prior data.
+
 ## Verification
 
 ```bash

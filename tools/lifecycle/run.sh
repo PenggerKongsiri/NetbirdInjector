@@ -5,7 +5,7 @@ APP="netbird-injector-manager"
 WORKSPACE="/workspace"
 
 assert_mode() { [[ "$(stat -c '%a' -- "$1")" == "$2" ]] || { printf 'unexpected mode for %s\n' "$1" >&2; exit 1; }; }
-health_once() { node -e "fetch('http://127.0.0.1:9090/healthz',{signal:AbortSignal.timeout(1000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"; }
+health_once() { node -e 'const c=require(process.argv[1]);const tls=Boolean(c.admin.tlsCertFile);const client=require(tls?"node:https":"node:http");const req=client.request({host:c.admin.listen,port:c.admin.port,path:"/healthz",method:"GET",rejectUnauthorized:false,timeout:1000},r=>{r.resume();process.exit(r.statusCode===200?0:1)});req.on("timeout",()=>req.destroy());req.on("error",()=>process.exit(1));req.end()' "/etc/${APP}/config.json"; }
 health() {
   for _ in {1..30}; do health_once && return; sleep 0.2; done
   return 1
@@ -128,7 +128,43 @@ for executable in setup install.sh bootstrap-ubuntu.sh packaging/collect-logs.sh
 done
 printf '%s\n' 'fake-lifecycle-admin-password' > /run/nim-admin-password
 chmod 0600 /run/nim-admin-password
-NIM_ADMIN_PASSWORD_FILE=/run/nim-admin-password "${RELEASE}/setup" install
+admin_ip="$(node -e 'const {networkInterfaces}=require("node:os");for(const entries of Object.values(networkInterfaces()))for(const entry of entries||[])if(entry.family==="IPv4"&&!entry.internal){process.stdout.write(entry.address);process.exit(0)}process.exit(1)')"
+touch /run/nim-systemctl-fail-start-once
+if NIM_ADMIN_LISTEN="${admin_ip}" NIM_ADMIN_ALLOWED_CIDRS="${admin_ip}/32" NIM_ADMIN_PASSWORD_FILE=/run/nim-admin-password "${RELEASE}/setup" install >/tmp/interrupted-install.log 2>&1; then
+  printf 'initial lifecycle install unexpectedly survived the simulated service-start failure\n' >&2
+  exit 1
+fi
+grep -F 'configuration and installed release were preserved for a safe retry' /tmp/interrupted-install.log >/dev/null \
+  || { printf 'unexpected initial-install failure:\n' >&2; sed -n '1,120p' /tmp/interrupted-install.log >&2; exit 1; }
+[[ -L "/opt/${APP}/current" && -f "/etc/${APP}/config.json" && ! -e "/var/lib/${APP}/state.db" ]]
+
+ln -s /tmp/missing-nim-state.db "/var/lib/${APP}/state.db"
+if NIM_RECOVER_MISSING_STATE=1 "${RELEASE}/setup" update >/tmp/symlink-recovery.log 2>&1; then
+  printf 'interrupted-install recovery unexpectedly accepted a database symlink\n' >&2
+  exit 1
+fi
+grep -F 'state database path is a symbolic link' /tmp/symlink-recovery.log >/dev/null
+rm -f -- "/var/lib/${APP}/state.db"
+
+mkdir -p "/var/backups/${APP}/backup-existing"
+touch "/var/backups/${APP}/backup-existing/manifest.json"
+if NIM_RECOVER_MISSING_STATE=1 "${RELEASE}/setup" update >/tmp/manifest-recovery.log 2>&1; then
+  printf 'interrupted-install recovery unexpectedly ignored an earlier backup manifest\n' >&2
+  exit 1
+fi
+grep -F 'an earlier backup manifest exists' /tmp/manifest-recovery.log >/dev/null
+rm -rf -- "/var/backups/${APP}/backup-existing"
+
+if "${RELEASE}/setup" update >/tmp/unapproved-recovery.log 2>&1; then
+  printf 'noninteractive interrupted-install recovery unexpectedly proceeded without approval\n' >&2
+  exit 1
+fi
+grep -F 'requires an interactive confirmation' /tmp/unapproved-recovery.log >/dev/null
+[[ ! -e "/var/lib/${APP}/state.db" ]]
+
+NIM_RECOVER_MISSING_STATE=1 "${RELEASE}/setup" update >/tmp/interrupted-recovery.log
+grep -F 'Initialized the missing first-start database after explicit approval.' /tmp/interrupted-recovery.log >/dev/null
+grep -F 'Update passed health checks.' /tmp/interrupted-recovery.log >/dev/null
 initial_release="$(readlink -f -- "/opt/${APP}/current")"
 for executable in setup install.sh bootstrap-ubuntu.sh packaging/collect-logs.sh packaging/post-install-verify.sh; do
   assert_mode "${initial_release}/${executable}" 755
@@ -140,6 +176,8 @@ assert_mode "/etc/${APP}/config.json" 640
 assert_mode "/var/lib/${APP}" 750
 assert_mode "/var/backups/${APP}" 750
 [[ -f "/var/lib/${APP}/state.db" ]]
+[[ "$(node -p 'require(process.argv[1]).admin.listen' "/etc/${APP}/config.json")" == "${admin_ip}" ]]
+[[ "$(node -p 'require(process.argv[1]).admin.tlsCertFile' "/etc/${APP}/config.json")" == "/etc/${APP}/admin.crt" ]]
 install -o root -g netbird-injector -m 0640 /dev/null "/etc/${APP}/netbird.token"
 assert_mode "/etc/${APP}/netbird.token" 640
 health
@@ -189,8 +227,11 @@ health
 [[ ! -e "/opt/${APP}" ]]
 [[ -f "/etc/${APP}/config.json" && -f "/var/lib/${APP}/state.db" && -d "/var/backups/${APP}" ]]
 NIM_ADMIN_PASSWORD_FILE=/run/nim-admin-password "${RELEASE}/setup" install
-health
-"${RELEASE}/setup" uninstall --purge-config --purge-data --purge-backups
-[[ ! -e "/opt/${APP}" && ! -e "/etc/${APP}" && ! -e "/var/lib/${APP}" && ! -e "/var/backups/${APP}" ]]
+health || { printf 'reinstall health failed; mocked service log follows:\n' >&2; sed -n '1,160p' /var/log/netbird-injector-manager.mock.log >&2; exit 1; }
+"${RELEASE}/setup" uninstall --purge-config --purge-data --purge-backups \
+  || { printf 'purging uninstall command failed\n' >&2; exit 1; }
+for removed_path in "/opt/${APP}" "/etc/${APP}" "/var/lib/${APP}" "/var/backups/${APP}"; do
+  [[ ! -e "${removed_path}" ]] || { printf 'purging uninstall left path: %s\n' "${removed_path}" >&2; exit 1; }
+done
 
-printf '%s\n' '{"lifecycle":"pass","systemd":"mocked","reboot":"not-tested","preservation":"pass","failedUpdateRollback":"pass","adminReset":"pass"}'
+printf '%s\n' '{"lifecycle":"pass","systemd":"mocked","reboot":"not-tested","preservation":"pass","failedUpdateRollback":"pass","interruptedInstallRecovery":"pass","privateHttps":"pass","adminReset":"pass"}'

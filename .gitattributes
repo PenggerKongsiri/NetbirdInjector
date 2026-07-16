@@ -1,4 +1,5 @@
 * text=auto
+.gitattributes text eol=lf
 *.js text eol=lf
 *.mjs text eol=lf
 *.json text eol=lf
@@ -6,7 +7,9 @@
 *.pem text eol=lf
 *.yaml text eol=lf
 *.yml text eol=lf
+*.sh text eol=lf
 Containerfile text eol=lf
 bootstrap-ubuntu.sh text eol=lf
 install.sh text eol=lf
 setup text eol=lf
+tools/lifecycle/systemctl text eol=lf

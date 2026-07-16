@@ -3,10 +3,16 @@ set -Eeuo pipefail
 
 PID_FILE="/run/netbird-injector-manager.mock.pid"
 LOG_FILE="/var/log/netbird-injector-manager.mock.log"
+FAIL_START_ONCE="/run/nim-systemctl-fail-start-once"
 
 running() { [[ -f "${PID_FILE}" ]] && kill -0 "$(<"${PID_FILE}")" 2>/dev/null; }
 start_service() {
   running && return
+  if [[ -f "${FAIL_START_ONCE}" ]]; then
+    rm -f -- "${FAIL_START_ONCE}"
+    printf '%s\n' 'mocked one-time service start failure' >> "${LOG_FILE}"
+    return 1
+  fi
   PATH=/usr/local/bin:/usr/bin:/bin NIM_CONFIG=/etc/netbird-injector-manager/config.json \
     nohup /usr/bin/env node --jitless --disable-proto=throw \
     /opt/netbird-injector-manager/current/src/main.mjs >> "${LOG_FILE}" 2>&1 &
@@ -33,6 +39,7 @@ case "${command}" in
   start) start_service;;
   stop) stop_service;;
   restart) stop_service; start_service;;
+  is-active) running;;
   status) running && { printf 'active (mocked systemctl)\n'; exit 0; }; printf 'inactive (mocked systemctl)\n'; exit 3;;
   show) printf 'ActiveState=%s\n' "$(running && printf active || printf inactive)";;
   *) printf 'unsupported mocked systemctl command: %s\n' "${command}" >&2; exit 2;;

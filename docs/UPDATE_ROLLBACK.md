@@ -13,6 +13,8 @@ sudo ./setup status
 
 Update creates a consistent backup, installs an immutable timestamped release, atomically changes the current symlink, reloads the unit, restarts, and polls health. Unit-install, restart, or health failure reinstates the previous code and service unit. Data and configuration remain in place.
 
+The only pre-backup exception is an explicitly approved recovery from an interrupted first start where the standard database does not exist yet. That recovery creates the initial empty database from the preserved administrator configuration and then immediately uses the ordinary backup path before installing new code. It is never automatic and refuses active services, symlinks, nonstandard database paths, and installations with an earlier backup manifest. See [INSTALL.md](INSTALL.md#retrying-an-interrupted-first-installation).
+
 To select a prior installed release explicitly:
 
 ```bash

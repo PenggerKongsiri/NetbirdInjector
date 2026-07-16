@@ -158,9 +158,67 @@ health_check() {
   return 1
 }
 
+service_failure_summary() {
+  printf '%s\n' "Service failure summary (secrets and request bodies are not included):" >&2
+  systemctl status --no-pager --full "${APP}.service" >&2 || true
+  if command -v journalctl >/dev/null; then
+    journalctl -u "${APP}.service" -n 40 --no-pager --output=short-iso >&2 || true
+  fi
+}
+
+recover_interrupted_install_state() {
+  local database configured_database answer recovery_dir
+  database="${DATA_DIR}/state.db"
+  [[ -L "${database}" ]] && die "state database path is a symbolic link; refusing interrupted-install recovery"
+  [[ -e "${database}" ]] && return
+
+  configured_database="$(node -p 'require(process.argv[1]).storage.database' "${CONFIG_FILE}")"
+  [[ "${configured_database}" == "${database}" ]] \
+    || die "configured state database is missing; automatic recovery is limited to the standard managed path ${database}"
+  if systemctl is-active --quiet "${APP}.service"; then
+    die "state database is missing while the service is active; stop and investigate instead of initializing empty state"
+  fi
+  if find "${BACKUP_DIR}" -mindepth 2 -maxdepth 2 -type f -name manifest.json -print -quit 2>/dev/null | grep -q .; then
+    die "state database is missing and an earlier backup manifest exists; verify and restore that backup instead of initializing empty state"
+  fi
+
+  say "The configuration exists, but the state database was never created."
+  say "This matches an interrupted first service start. Recovery preserves the configured administrator hash and TLS files, initializes an empty route database, and then creates the normal pre-update backup."
+  say "Do not approve this recovery if this installation previously held routes or account changes."
+  if [[ "${NIM_RECOVER_MISSING_STATE:-}" == "1" ]]; then
+    answer="y"
+  elif [[ -t 0 ]]; then
+    read -r -p "Recover the interrupted initial installation? [y/N] " answer
+  else
+    die "interrupted-install recovery requires an interactive confirmation or NIM_RECOVER_MISSING_STATE=1"
+  fi
+  [[ "${answer}" =~ ^[Yy]$ ]] || die "interrupted-install recovery was not approved; no state was created"
+
+  systemctl stop "${APP}.service" || die "could not stop the failed service before state initialization"
+  recovery_dir="$(mktemp -d -p "${OPT_DIR}" '.state-recovery.XXXXXXXX')"
+  if ! {
+    chmod 0755 "${recovery_dir}" &&
+    cp -a -- "${SOURCE_DIR}/src" "${recovery_dir}/src" &&
+    install -d -m 0755 "${recovery_dir}/scripts" &&
+    install -o root -g root -m 0644 "${SOURCE_DIR}/scripts/initialize-state.mjs" "${recovery_dir}/scripts/initialize-state.mjs" &&
+    chown -R root:root "${recovery_dir}" &&
+    chmod -R a+rX,go-w "${recovery_dir}"
+  }; then
+    rm -rf -- "${recovery_dir}"
+    die "could not stage the verified interrupted-install recovery helper"
+  fi
+  if ! runuser -u "${SERVICE_USER}" -- node "${recovery_dir}/scripts/initialize-state.mjs" "${CONFIG_FILE}"; then
+    rm -rf -- "${recovery_dir}"
+    die "interrupted-install state initialization failed without replacing existing state"
+  fi
+  rm -rf -- "${recovery_dir}"
+  say "Initialized the missing first-start database after explicit approval."
+}
+
 create_backup() {
   local output
   [[ -f "${CONFIG_FILE}" ]] || die "configuration does not exist"
+  recover_interrupted_install_state
   output="${BACKUP_DIR}/backup-$(date -u +%Y%m%dT%H%M%SZ)"
   runuser -u "${SERVICE_USER}" -- node "${OPT_DIR}/current/scripts/backup.mjs" create "${CONFIG_FILE}" "${output}"
   say "Backup created at ${output}; NetBird API token files are intentionally excluded."
@@ -177,14 +235,22 @@ cmd_install() {
   install_release
   initial_config
   install_unit
-  systemctl enable --now "${APP}.service"
-  health_check || die "service did not become healthy; inspect: journalctl -u ${APP}"
+  if ! systemctl enable --now "${APP}.service"; then
+    service_failure_summary
+    die "service could not start; configuration and installed release were preserved for a safe retry"
+  fi
+  if ! health_check; then
+    service_failure_summary
+    die "service did not become healthy; configuration and installed release were preserved for a safe retry"
+  fi
   local admin_url
   # JavaScript template expressions are intentionally protected from the shell.
   # shellcheck disable=SC2016
   admin_url="$(node -e 'const c=require(process.argv[1]);const p=c.admin.tlsCertFile?"https":"http";const h=c.admin.listen.includes(":")?`[${c.admin.listen}]`:c.admin.listen;process.stdout.write(`${p}://${h}:${c.admin.port}`)' "${CONFIG_FILE}")"
   say "Installed successfully. Admin UI: ${admin_url}; proxy listener: 0.0.0.0:8080."
-  is_loopback_address "$(node -p 'require(process.argv[1]).admin.listen' "${CONFIG_FILE}")" && say "Use an SSH tunnel for admin access: ssh -L 9090:127.0.0.1:9090 <USER>@<HOST>"
+  if is_loopback_address "$(node -p 'require(process.argv[1]).admin.listen' "${CONFIG_FILE}")"; then
+    say "Use an SSH tunnel for admin access: ssh -L 9090:127.0.0.1:9090 <USER>@<HOST>"
+  fi
 }
 
 cmd_update() {
@@ -203,6 +269,7 @@ cmd_update() {
     die "new systemd unit failed validation/reload; code symlink was rolled back"
   fi
   if ! systemctl restart "${APP}.service" || ! health_check; then
+    service_failure_summary
     ln -sfn -- "${previous}" "${OPT_DIR}/current.rollback"
     mv -Tf -- "${OPT_DIR}/current.rollback" "${OPT_DIR}/current"
     install -o root -g root -m 0644 "${previous}/packaging/${APP}.service" "${UNIT_FILE}"
@@ -299,8 +366,10 @@ cmd_repair() {
   chown root:"${SERVICE_USER}" "${CONFIG_FILE}"; chmod 0640 "${CONFIG_FILE}"
   chown -R "${SERVICE_USER}":"${SERVICE_USER}" "${DATA_DIR}" "${BACKUP_DIR}"
   install_unit
-  systemctl enable --now "${APP}.service"
-  health_check || die "repair completed but service remains unhealthy"
+  if ! systemctl enable --now "${APP}.service" || ! health_check; then
+    service_failure_summary
+    die "repair completed but service remains unhealthy"
+  fi
   say "Permissions, unit file, enablement, and health were repaired."
 }
 

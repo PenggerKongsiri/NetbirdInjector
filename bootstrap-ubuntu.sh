@@ -141,8 +141,21 @@ node_is_compatible() {
     && node -e 'const [major,minor]=process.versions.node.split(".").map(Number);process.exit(major===24&&minor>=15?0:1)' >/dev/null 2>&1
 }
 
+normalize_node_permissions() {
+  local target="$1"
+  as_root chmod -R a+rX,go-w -- "${target}"
+}
+
+node_target_exists() {
+  local target="$1"
+  as_root test -e "${target}" || return 1
+  if ! as_root test -d "${target}" || as_root test -L "${target}"; then
+    die "${target} exists but is not a real directory; refusing to modify it"
+  fi
+}
+
 install_node() {
-  local machine node_arch checksums filename expected archive extract_dir directory target installed_version name link
+  local machine node_arch checksums filename expected archive extract_dir directory target installed_version actual_version name link
   if node_is_compatible && command -v npm >/dev/null 2>&1; then
     say "Using compatible Node.js $(node --version) from $(command -v node)."
     return
@@ -183,15 +196,15 @@ install_node() {
   installed_version="${directory#node-v}"
   installed_version="${installed_version%%-*}"
 
-  if as_root test -e "${target}"; then
-    [[ "$(as_root "${target}/bin/node" -p 'process.versions.node' 2>/dev/null || true)" == "${installed_version}" ]] \
-      || die "${target} already exists but is not the verified Node.js ${installed_version} installation"
-  else
+  if ! node_target_exists "${target}"; then
     as_root install -d -o root -g root -m 0755 /usr/local/lib/nodejs
     as_root cp -a -- "${extract_dir}/${directory}" "${target}"
     as_root chown -R root:root "${target}"
-    as_root chmod -R go-w "${target}"
   fi
+  actual_version="$(as_root "${target}/bin/node" -p 'process.versions.node' 2>/dev/null || true)"
+  [[ "${actual_version}" == "${installed_version}" ]] \
+    || die "${target} exists but cannot run as the verified Node.js ${installed_version} installation"
+  normalize_node_permissions "${target}"
 
   for name in node npm npx corepack; do
     link="/usr/local/bin/${name}"
@@ -202,9 +215,10 @@ install_node() {
   done
   export PATH="/usr/local/bin:${PATH}"
   hash -r
-  node_is_compatible || die "the installed Node.js version is not compatible"
-  command -v npm >/dev/null || die "npm was not installed with Node.js"
-  say "Installed Node.js $(node --version) at ${target}."
+  /usr/local/bin/node -e 'const [major,minor]=process.versions.node.split(".").map(Number);process.exit(major===24&&minor>=15?0:1)' \
+    || die "the installed Node.js version is not compatible"
+  /usr/local/bin/npm --version >/dev/null || die "npm was not installed with Node.js"
+  say "Installed Node.js $(/usr/local/bin/node --version) at ${target}."
 }
 
 install_netbird() {

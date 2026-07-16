@@ -24,6 +24,30 @@ if (validate_archive_list /tmp/unsafe-archive.list 'NetbirdInjector-012345678901
   exit 1
 fi
 ./bootstrap-ubuntu.sh --help >/dev/null
+mkdir -p /tmp/restricted-node/bin /tmp/restricted-node/lib
+printf '%s\n' '#!/usr/bin/env sh' 'exit 0' > /tmp/restricted-node/bin/node
+printf '%s\n' 'module.exports = {};' > /tmp/restricted-node/lib/runtime.js
+chmod 0700 /tmp/restricted-node /tmp/restricted-node/bin /tmp/restricted-node/lib /tmp/restricted-node/bin/node
+chmod 0600 /tmp/restricted-node/lib/runtime.js
+(
+  # shellcheck source=/dev/null
+  source ./bootstrap-ubuntu.sh
+  normalize_node_permissions /tmp/restricted-node
+)
+assert_mode /tmp/restricted-node 755
+assert_mode /tmp/restricted-node/bin 755
+assert_mode /tmp/restricted-node/bin/node 755
+assert_mode /tmp/restricted-node/lib/runtime.js 644
+ln -s /tmp/restricted-node /tmp/restricted-node-link
+if (
+  # shellcheck source=/dev/null
+  source ./bootstrap-ubuntu.sh
+  node_target_exists /tmp/restricted-node-link
+) >/tmp/restricted-node-link.log 2>&1; then
+  printf 'bootstrap unexpectedly accepted a symlinked Node installation target\n' >&2
+  exit 1
+fi
+grep -F 'is not a real directory; refusing to modify it' /tmp/restricted-node-link.log >/dev/null
 mkdir -p /tmp/existing-netbird-bin
 # The variables belong to the generated fake and must expand only when that fake runs.
 # shellcheck disable=SC2016

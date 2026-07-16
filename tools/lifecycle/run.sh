@@ -112,8 +112,15 @@ if ./bootstrap-ubuntu.sh --netbird-management-url http://insecure.example --yes 
 fi
 grep -F 'must be an HTTPS URL' /tmp/bootstrap-url.log >/dev/null
 ./setup detect
-node scripts/release.mjs build
+(
+  umask 077
+  node scripts/release.mjs build
+)
 RELEASE="${WORKSPACE}/dist/release/netbird-injector-manager"
+assert_mode "${RELEASE}" 755
+assert_mode "${RELEASE}/src" 755
+assert_mode "${RELEASE}/src/main.mjs" 644
+assert_mode "${RELEASE}/RELEASE_MANIFEST.json" 644
 for executable in setup install.sh bootstrap-ubuntu.sh packaging/collect-logs.sh packaging/post-install-verify.sh; do
   assert_mode "${RELEASE}/${executable}" 755
 done

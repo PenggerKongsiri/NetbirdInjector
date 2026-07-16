@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -28,11 +28,40 @@ function sha256(path) {
   return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
-function files(directory) {
-  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+function tree(directory, root = directory) {
+  const directories = [directory];
+  const filePaths = [];
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name);
-    return entry.isDirectory() ? files(path) : [path];
-  });
+    const name = relative(root, path).split(sep).join('/');
+    const metadata = lstatSync(path);
+    if (metadata.isSymbolicLink()) throw new Error(`release contains symbolic link: ${name}`);
+    if (metadata.isDirectory()) {
+      const child = tree(path, root);
+      directories.push(...child.directories);
+      filePaths.push(...child.filePaths);
+    } else if (metadata.isFile()) {
+      filePaths.push(path);
+    } else {
+      throw new Error(`release contains unsupported entry type: ${name}`);
+    }
+  }
+  return { directories, filePaths };
+}
+
+function files(directory) {
+  return tree(directory).filePaths;
+}
+
+function normalizeRuntimePermissions(root) {
+  if (process.platform === 'win32') return;
+  const requiredExecutables = new Set(REQUIRED_EXECUTABLES);
+  const entries = tree(root);
+  for (const path of entries.directories) chmodSync(path, 0o755);
+  for (const path of entries.filePaths) {
+    const name = relative(root, path).split(sep).join('/');
+    chmodSync(path, requiredExecutables.has(name) ? 0o755 : 0o644);
+  }
 }
 
 function extension(path) {
@@ -87,9 +116,19 @@ export function verifyRuntime(rootArg) {
     if (!Object.hasOwn(manifest.files, required)) throw new Error(`release is missing required file: ${required}`);
   }
   if (process.platform !== 'win32') {
-    for (const name of REQUIRED_EXECUTABLES) {
-      const path = join(root, ...name.split('/'));
-      if ((statSync(path).mode & 0o111) !== 0o111) throw new Error(`release entrypoint is not executable: ${name}`);
+    const requiredExecutables = new Set(REQUIRED_EXECUTABLES);
+    const entries = tree(root);
+    for (const path of entries.directories) {
+      const name = relative(root, path).split(sep).join('/') || '.';
+      if ((statSync(path).mode & 0o777) !== 0o755) throw new Error(`release directory is not mode 0755: ${name}`);
+    }
+    for (const path of entries.filePaths) {
+      const name = relative(root, path).split(sep).join('/');
+      const expectedMode = requiredExecutables.has(name) ? 0o755 : 0o644;
+      const label = requiredExecutables.has(name) ? 'entrypoint' : 'file';
+      if ((statSync(path).mode & 0o777) !== expectedMode) {
+        throw new Error(`release ${label} is not mode 0${expectedMode.toString(8)}: ${name}`);
+      }
     }
   }
   return { root, fileCount: expectedNames.length, manifest };
@@ -106,13 +145,14 @@ export function buildRuntime(sourceArg, outputArg) {
     if (!existsSync(from)) throw new Error(`runtime source entry is missing: ${entry}`);
     cpSync(from, join(output, entry), { recursive: true, errorOnExist: true, force: false });
   }
-  for (const name of REQUIRED_EXECUTABLES) chmodSync(join(output, ...name.split('/')), 0o755);
+  normalizeRuntimePermissions(output);
   const packageData = JSON.parse(readFileSync(join(source, 'package.json'), 'utf8'));
   const manifest = {
     format: 'netbird-injector-manager-release', version: 1, packageVersion: packageData.version,
     files: manifestFor(output),
   };
   writeFileSync(join(output, 'RELEASE_MANIFEST.json'), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o644 });
+  if (process.platform !== 'win32') chmodSync(join(output, 'RELEASE_MANIFEST.json'), 0o644);
   return verifyRuntime(output);
 }
 
@@ -133,7 +173,7 @@ function buildArchive() {
   rmSync(archiveVerification, { recursive: true, force: true });
   mkdirSync(archiveVerification, { recursive: true, mode: 0o755 });
   try {
-    const extract = spawnSync('tar', ['-xzf', archivePath, '-C', archiveVerification], { stdio: 'inherit', windowsHide: true });
+    const extract = spawnSync('tar', ['-xzpf', archivePath, '-C', archiveVerification], { stdio: 'inherit', windowsHide: true });
     if (extract.error) throw extract.error;
     if (extract.status !== 0) throw new Error(`release archive extraction failed with status ${extract.status}`);
     verifyRuntime(join(archiveVerification, 'netbird-injector-manager'));

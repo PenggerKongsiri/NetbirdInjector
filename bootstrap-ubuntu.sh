@@ -294,13 +294,23 @@ guide_netbird_connection() {
     || die "stopped before application installation; rerun after NetBird enrollment or use --skip-netbird-connect"
 }
 
+run_project_checks() {
+  if [[ -e "${SOURCE_DIR}/.git" ]]; then
+    say "Running repository checks, full Git-history audit, and tests..."
+    npm run check
+  else
+    say "Git metadata is not included in this immutable source archive."
+    say "Running syntax/configuration checks, current-tree audit, and all tests; full history remains enforced in CI and Git checkouts."
+    npm run check:source-archive
+  fi
+}
+
 build_and_install() {
   local lifecycle_command="install"
   cd "${SOURCE_DIR}"
   say "Restoring exact npm dependencies from package-lock.json..."
   npm ci --ignore-scripts
-  say "Running repository checks and tests..."
-  npm run check
+  run_project_checks
   say "Checking installed dependencies for high/critical known vulnerabilities..."
   npm audit --audit-level=high
   say "Building and verifying the release bundle..."

@@ -4,6 +4,7 @@ All automated tests use fake peers, a fake NetBird HTTP API, fake upstream appli
 
 ```bash
 npm run check
+npm run check:source-archive
 npm run test:coverage
 npm run browser:test
 npm run lifecycle:test
@@ -13,7 +14,7 @@ npm run soak:short
 npm run sandbox:destroy
 ```
 
-`npm run check` includes syntax, example-configuration validation, current-tree and pushed-Git-history secret/generated-file/machine-path scanning, and all Node unit/integration tests. CI fetches full Git history for this check. The browser smoke launches the local fake environment and pinned Chromium; it covers invalid/valid login, dashboard/route rendering, fake peer discovery, mobile viewport, keyboard focus, and logout. Administrative API integration tests cover throttling, CSRF, stored-content escaping, route/profile transactions, preview, import/export, enable/disable, and exact rollback.
+`npm run check` includes syntax, example-configuration validation, current-tree and pushed-Git-history secret/generated-file/machine-path scanning, and all Node unit/integration tests. CI fetches full Git history for this check. `npm run check:source-archive` is the explicit no-`.git` variant used only by immutable source archives; it retains every applicable check and test but cannot inspect history that the archive does not contain. The lifecycle suite proves that archive and checkout bootstraps select the intended command and that the full history audit still fails closed without Git metadata. The browser smoke launches the local fake environment and pinned Chromium; it covers invalid/valid login, dashboard/route rendering, fake peer discovery, mobile viewport, keyboard focus, and logout. Administrative API integration tests cover throttling, CSRF, stored-content escaping, route/profile transactions, preview, import/export, enable/disable, and exact rollback.
 
 The Docker lifecycle test uses a normal Debian/Node container and a mocked `systemctl`. It validates install/update/rollback/preservation logic and file permissions. It syntax-checks both installer scripts, verifies their help paths, rejects traversal in the remote source-archive allowlist, verifies restrictive Node archive modes are safely normalized, proves an existing NetBird client causes no NetBird command or service/enrollment action, and proves that unknown bootstrap options and non-HTTPS self-hosted management URLs fail before installation. It does not execute the remote GitHub download or the bootstrap's real apt, Node download, missing-client NetBird repository/enrollment, actual systemd, boot, or reboot paths. See [SANDBOX.md](SANDBOX.md) for container functional and soak commands.
 

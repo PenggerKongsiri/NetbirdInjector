@@ -77,7 +77,7 @@ Run it as your normal sudo-capable user when possible. The script:
 
 - installs the OS tools and a compatible official Node.js 24 archive after SHA-256 verification;
 - leaves an existing NetBird installation, service, management URL, and enrollment untouched; when NetBird is missing, installs it through its signed apt repository and guides `netbird up` without accepting or storing a setup key;
-- runs the locked dependency install, full test suite, high/critical dependency audit, release build, and release-manifest verification; and
+- runs the locked dependency install, all source-applicable checks/tests (plus the full Git-history audit when metadata is present), high/critical dependency audit, release build, and release-manifest verification; and
 - starts the existing systemd installer, which asks for the administrator username, password, and loopback or private-HTTPS admin access mode.
 
 For a self-hosted NetBird deployment where the client is not installed yet, either enter its HTTPS management URL when prompted or pass `--netbird-management-url`. If NetBird is already installed, all NetBird setup options are ignored and the existing configuration is left unchanged. If a missing client must be enrolled separately with a dashboard-generated setup key, run the bootstrap with `--skip-netbird-connect`, then run the exact enrollment command from the NetBird dashboard.

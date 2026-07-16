@@ -24,6 +24,41 @@ if (validate_archive_list /tmp/unsafe-archive.list 'NetbirdInjector-012345678901
   exit 1
 fi
 ./bootstrap-ubuntu.sh --help >/dev/null
+mkdir -p /tmp/archive-source /tmp/checkout-source
+(
+  : > /tmp/archive-check.calls
+  # shellcheck source=/dev/null
+  source ./bootstrap-ubuntu.sh
+  SOURCE_DIR=/tmp/archive-source
+  export SOURCE_DIR
+  # Invoked indirectly by run_project_checks from the sourced bootstrap.
+  # shellcheck disable=SC2329
+  npm() { printf '%s\n' "$*" >> /tmp/archive-check.calls; }
+  run_project_checks
+) > /tmp/archive-check.log
+grep -Fx 'run check:source-archive' /tmp/archive-check.calls >/dev/null
+grep -F 'full history remains enforced in CI and Git checkouts' /tmp/archive-check.log >/dev/null
+touch /tmp/checkout-source/.git
+(
+  : > /tmp/checkout-check.calls
+  # shellcheck source=/dev/null
+  source ./bootstrap-ubuntu.sh
+  SOURCE_DIR=/tmp/checkout-source
+  export SOURCE_DIR
+  # Invoked indirectly by run_project_checks from the sourced bootstrap.
+  # shellcheck disable=SC2329
+  npm() { printf '%s\n' "$*" >> /tmp/checkout-check.calls; }
+  run_project_checks
+) > /tmp/checkout-check.log
+grep -Fx 'run check' /tmp/checkout-check.calls >/dev/null
+grep -F 'full Git-history audit' /tmp/checkout-check.log >/dev/null
+if node scripts/history-audit.mjs >/tmp/missing-history.log 2>&1; then
+  printf 'history audit unexpectedly passed without Git metadata\n' >&2
+  exit 1
+fi
+grep -E 'git is unavailable|not a git repository' /tmp/missing-history.log >/dev/null
+npm run check:source-archive >/tmp/source-archive-check.log
+grep -F 'repository text files passed secret and machine-path scanning' /tmp/source-archive-check.log >/dev/null
 mkdir -p /tmp/restricted-node/bin /tmp/restricted-node/lib
 printf '%s\n' '#!/usr/bin/env sh' 'exit 0' > /tmp/restricted-node/bin/node
 printf '%s\n' 'module.exports = {};' > /tmp/restricted-node/lib/runtime.js

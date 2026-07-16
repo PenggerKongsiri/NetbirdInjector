@@ -1,6 +1,6 @@
 {
   "name": "netbird-injector-manager",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "Security-focused reverse proxy route and HTML injection manager for NetBird deployments",
   "type": "module",
@@ -26,6 +26,7 @@
     "start": "node src/main.mjs",
     "dev": "node --watch src/main.mjs",
     "check": "node scripts/check-syntax.mjs && node scripts/validate-examples.mjs && node scripts/repository-audit.mjs && node scripts/history-audit.mjs && node --test",
+    "check:source-archive": "node scripts/check-syntax.mjs && node scripts/validate-examples.mjs && node scripts/repository-audit.mjs && node --test",
     "check:runtime": "node scripts/check-syntax.mjs --runtime",
     "test": "node --test",
     "test:coverage": "node --test --experimental-test-coverage",

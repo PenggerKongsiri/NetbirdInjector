@@ -55,10 +55,16 @@ grep -F 'must be an HTTPS URL' /tmp/bootstrap-url.log >/dev/null
 ./setup detect
 node scripts/release.mjs build
 RELEASE="${WORKSPACE}/dist/release/netbird-injector-manager"
+for executable in setup install.sh bootstrap-ubuntu.sh packaging/collect-logs.sh packaging/post-install-verify.sh; do
+  assert_mode "${RELEASE}/${executable}" 755
+done
 printf '%s\n' 'fake-lifecycle-admin-password' > /run/nim-admin-password
 chmod 0600 /run/nim-admin-password
 NIM_ADMIN_PASSWORD_FILE=/run/nim-admin-password "${RELEASE}/setup" install
 initial_release="$(readlink -f -- "/opt/${APP}/current")"
+for executable in setup install.sh bootstrap-ubuntu.sh packaging/collect-logs.sh packaging/post-install-verify.sh; do
+  assert_mode "${initial_release}/${executable}" 755
+done
 
 id netbird-injector >/dev/null
 [[ "$(stat -c '%U:%G' -- "/etc/${APP}/config.json")" == 'root:netbird-injector' ]]

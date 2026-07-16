@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +8,10 @@ export const RUNTIME_ENTRIES = Object.freeze([
   'src', 'scripts', 'packaging', 'docs', 'config', 'package.json', 'package-lock.json', 'README.md', 'LICENSE',
   'SECURITY.md', 'CONTRIBUTING.md', 'AGENTS.md', 'Containerfile', 'compose.example.yaml', 'setup',
   'bootstrap-ubuntu.sh', 'install.sh',
+]);
+
+export const REQUIRED_EXECUTABLES = Object.freeze([
+  'setup', 'install.sh', 'bootstrap-ubuntu.sh', 'packaging/collect-logs.sh', 'packaging/post-install-verify.sh',
 ]);
 
 const FORBIDDEN_BASENAMES = new Set(['.env', 'state.db', 'state.db-wal', 'state.db-shm']);
@@ -79,8 +83,14 @@ export function verifyRuntime(rootArg) {
     const expected = manifest.files[name];
     if (sha256(path) !== expected.sha256 || statSync(path).size !== expected.bytes) throw new Error(`release checksum mismatch: ${name}`);
   }
-  for (const required of ['src/main.mjs', 'setup', 'bootstrap-ubuntu.sh', 'install.sh', 'packaging/netbird-injector-manager.service', 'config/config.example.json', 'LICENSE']) {
+  for (const required of ['src/main.mjs', ...REQUIRED_EXECUTABLES, 'packaging/netbird-injector-manager.service', 'config/config.example.json', 'LICENSE']) {
     if (!Object.hasOwn(manifest.files, required)) throw new Error(`release is missing required file: ${required}`);
+  }
+  if (process.platform !== 'win32') {
+    for (const name of REQUIRED_EXECUTABLES) {
+      const path = join(root, ...name.split('/'));
+      if ((statSync(path).mode & 0o111) !== 0o111) throw new Error(`release entrypoint is not executable: ${name}`);
+    }
   }
   return { root, fileCount: expectedNames.length, manifest };
 }
@@ -96,6 +106,7 @@ export function buildRuntime(sourceArg, outputArg) {
     if (!existsSync(from)) throw new Error(`runtime source entry is missing: ${entry}`);
     cpSync(from, join(output, entry), { recursive: true, errorOnExist: true, force: false });
   }
+  for (const name of REQUIRED_EXECUTABLES) chmodSync(join(output, ...name.split('/')), 0o755);
   const packageData = JSON.parse(readFileSync(join(source, 'package.json'), 'utf8'));
   const manifest = {
     format: 'netbird-injector-manager-release', version: 1, packageVersion: packageData.version,
@@ -118,6 +129,17 @@ function buildArchive() {
   const tar = spawnSync('tar', ['-czf', archivePath, '-C', releaseRoot, 'netbird-injector-manager'], { stdio: 'inherit', windowsHide: true });
   if (tar.error) throw tar.error;
   if (tar.status !== 0) throw new Error(`tar failed with status ${tar.status}`);
+  const archiveVerification = join(releaseRoot, '.archive-verification');
+  rmSync(archiveVerification, { recursive: true, force: true });
+  mkdirSync(archiveVerification, { recursive: true, mode: 0o755 });
+  try {
+    const extract = spawnSync('tar', ['-xzf', archivePath, '-C', archiveVerification], { stdio: 'inherit', windowsHide: true });
+    if (extract.error) throw extract.error;
+    if (extract.status !== 0) throw new Error(`release archive extraction failed with status ${extract.status}`);
+    verifyRuntime(join(archiveVerification, 'netbird-injector-manager'));
+  } finally {
+    rmSync(archiveVerification, { recursive: true, force: true });
+  }
   writeFileSync(join(releaseRoot, 'SHA256SUMS'), `${sha256(archivePath)}  ${archiveName}\n`, { mode: 0o644 });
   process.stdout.write(`${archivePath}\n${result.fileCount} runtime files verified\n`);
 }

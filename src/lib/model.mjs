@@ -124,7 +124,8 @@ export function validateInjection(input, { assignId = true } = {}) {
     options.websiteId = typeof options.websiteId === 'string' ? options.websiteId.trim().slice(0, 200) : '';
     options.analyticsUrl = typeof options.analyticsUrl === 'string' ? options.analyticsUrl.trim() : item.url;
     options.recorderUrl = typeof options.recorderUrl === 'string' ? options.recorderUrl.trim() : '';
-    if (options.analytics && (!options.websiteId || !options.analyticsUrl)) throw new Error('Umami analytics requires a website ID and analytics URL');
+    if ((options.analytics || options.recorder) && !options.websiteId) throw new Error('Umami analytics and recorder require a website ID');
+    if (options.analytics && !options.analyticsUrl) throw new Error('Umami analytics requires an analytics URL');
     if (options.recorder && !options.recorderUrl) throw new Error('Umami recorder requires a recorder URL');
     for (const url of [options.analyticsUrl, options.recorderUrl].filter(Boolean)) {
       const parsed = new URL(url);

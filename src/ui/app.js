@@ -4,6 +4,8 @@ let profiles = [];
 let currentRoute = null;
 let currentDraft = null;
 let currentProfile = null;
+let editingInjectionIndex = -1;
+const ADVANCED_STORAGE_KEY = 'nim-advanced-mode';
 
 const $ = (selector) => document.querySelector(selector);
 const toast = (message) => {
@@ -37,7 +39,21 @@ function button(label, action, className = 'ghost') {
   return element;
 }
 
+function setMessage(selector, message, isError = false) {
+  const element = $(selector);
+  element.textContent = message;
+  element.classList.toggle('error', isError);
+}
+
+function setAdvancedMode(enabled, { persist = true } = {}) {
+  document.body.classList.toggle('advanced-mode', enabled);
+  $('#advanced-mode').checked = enabled;
+  if (persist) localStorage.setItem(ADVANCED_STORAGE_KEY, enabled ? 'true' : 'false');
+  if (!enabled && (!$('#view-preview').hidden || !$('#view-audit').hidden)) showView('routes');
+}
+
 function showView(name) {
+  if (!document.body.classList.contains('advanced-mode') && ['preview', 'audit'].includes(name)) name = 'routes';
   document.querySelectorAll('.view').forEach((view) => { view.hidden = view.id !== `view-${name}`; });
   document.querySelectorAll('.tabs button').forEach((entry) => entry.classList.toggle('active', entry.dataset.view === name));
   if (name === 'profiles') loadProfiles();
@@ -52,10 +68,42 @@ function routeConfig(route) {
   return config;
 }
 
+function renderTrafficMap() {
+  const map = $('#traffic-map');
+  map.replaceChildren();
+  if (!routes.length) {
+    map.append(node('p', 'No sites yet. Add a site to connect a NetBird hostname through this Injector to an application peer.', 'empty-map'));
+    return;
+  }
+  for (const route of routes) {
+    const config = route.draft?.config || route.active?.config;
+    if (!config) continue;
+    const flow = node('article', undefined, 'traffic-flow');
+    const source = node('div', undefined, 'traffic-node');
+    source.append(node('strong', route.hostname), node('span', 'NetBird HTTP service'));
+    const inbound = node('div', 'HTTP to :8080', 'traffic-arrow');
+    const injector = node('div', undefined, 'traffic-node injector');
+    const injectionCount = (config.injections?.length || 0) + (config.profileIds?.length || 0);
+    injector.append(
+      node('strong', 'This Injector VM'),
+      node('span', config.mode === 'inject' ? `${injectionCount} injection source(s) selected` : 'Forwarding without page changes'),
+    );
+    const outbound = node('div', config.upstream.protocol.toUpperCase(), 'traffic-arrow');
+    const target = node('div', undefined, 'traffic-node');
+    target.append(
+      node('strong', `${config.upstream.host}:${config.upstream.port}`),
+      node('span', `${route.active ? (route.enabled ? 'Live' : 'Off') : 'Draft'} application destination`),
+      button('Edit this path', () => openRoute(route), 'ghost traffic-edit'),
+    );
+    flow.append(source, inbound, injector, outbound, target);
+    map.append(flow);
+  }
+}
+
 function renderRoutes() {
   const list = $('#route-list');
   list.replaceChildren();
-  if (!routes.length) list.append(node('p', 'No routes yet. Create a disabled draft, test it, and activate it when ready.', 'muted'));
+  if (!routes.length) list.append(node('p', 'No sites yet. Start with a test hostname; the site remains off until you explicitly activate it.', 'muted'));
   for (const route of routes) {
     const card = node('article', undefined, 'card');
     const detail = node('div');
@@ -64,7 +112,7 @@ function renderRoutes() {
     title.append(state, document.createTextNode(route.hostname));
     const active = route.active?.config;
     const draft = route.draft?.config;
-    detail.append(title, node('p', active ? `${active.upstream.protocol}://${active.upstream.host}:${active.upstream.port} · ${active.mode}` : 'No active version'));
+    detail.append(title, node('p', active ? `${active.upstream.protocol}://${active.upstream.host}:${active.upstream.port} - ${active.mode === 'inject' ? 'adds selected injections' : 'forward only'}` : 'No active version'));
     if (draft) detail.append(node('p', `Draft v${route.draft.version_no} waiting for validation/activation`));
     const actions = node('div', undefined, 'card-actions');
     actions.append(
@@ -77,6 +125,7 @@ function renderRoutes() {
     card.append(detail, actions);
     list.append(card);
   }
+  renderTrafficMap();
 }
 
 async function loadRoutes() {
@@ -86,6 +135,152 @@ async function loadRoutes() {
 
 function readLines(selector) {
   return $(selector).value.split('\n').map((value) => value.trim()).filter(Boolean);
+}
+
+function syncProfileIdsFromPicker() {
+  const known = new Set(profiles.map((profile) => profile.id));
+  const unknown = readLines('#profile-ids').filter((profileId) => !known.has(profileId));
+  const selected = [...document.querySelectorAll('#profile-picker input[type="checkbox"]:checked')].map((input) => input.value);
+  $('#profile-ids').value = [...unknown, ...selected].join('\n');
+  if (selected.length) $('#route-mode').value = 'inject';
+}
+
+function renderProfilePicker(selectedIds = readLines('#profile-ids')) {
+  const picker = $('#profile-picker');
+  picker.replaceChildren();
+  if (!profiles.length) {
+    picker.append(node('p', 'No profiles yet. Create an Umami profile or add a script directly below.', 'muted'));
+    return;
+  }
+  const selected = new Set(selectedIds);
+  for (const profile of profiles) {
+    const label = node('label', undefined, 'profile-option');
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.value = profile.id;
+    input.checked = selected.has(profile.id);
+    input.addEventListener('change', syncProfileIdsFromPicker);
+    const description = node('span');
+    description.append(node('strong', profile.name), node('small', `${profile.kind === 'umami' ? 'Umami' : 'Custom'} - ${profile.items.length} item(s)`));
+    label.append(input, description);
+    picker.append(label);
+  }
+}
+
+function readDirectInjections() {
+  const items = JSON.parse($('#injections').value || '[]');
+  if (!Array.isArray(items)) throw new Error('Direct injections must be a JSON array');
+  return items;
+}
+
+function injectionTypeLabel(type) {
+  return ({ 'external-script': 'External script', 'inline-script': 'Inline JavaScript', html: 'HTML block', 'external-style': 'Stylesheet', 'inline-style': 'Inline CSS', meta: 'Meta tag', umami: 'Umami' })[type] || type;
+}
+
+function isSimpleEditableInjection(item) {
+  if (!['external-script', 'inline-script', 'html'].includes(item.type) || item.enabled === false) return false;
+  if (!['head-end', 'body-start', 'body-end'].includes(item.location)) return false;
+  if (item.nonceBehavior && item.nonceBehavior !== 'none') return false;
+  if (['includeHostnames', 'includePaths', 'excludePaths', 'environments'].some((field) => item[field]?.length)) return false;
+  if (item.duplicatePattern || item.notes || item.options !== undefined) return false;
+  const attributes = Object.keys(item.attributes || {});
+  return item.type === 'external-script' ? attributes.every((name) => name === 'defer') : attributes.length === 0;
+}
+
+function updateSimpleInjectionFields() {
+  const type = $('#simple-injection-type').value;
+  const external = type === 'external-script';
+  $('#simple-script-url-wrap').hidden = !external;
+  $('#simple-injection-content-wrap').hidden = external;
+  $('#simple-script-options').hidden = !external;
+  $('#simple-injection-content-label').textContent = type === 'html' ? 'HTML content' : 'JavaScript code';
+}
+
+function resetSimpleInjectionEditor() {
+  editingInjectionIndex = -1;
+  $('#simple-injection-type').value = 'external-script';
+  $('#simple-injection-name').value = '';
+  $('#simple-injection-location').value = 'head-end';
+  $('#simple-injection-url').value = '';
+  $('#simple-injection-content').value = '';
+  $('#simple-script-defer').checked = true;
+  $('#save-simple-injection').textContent = 'Add to site';
+  $('#cancel-simple-injection').hidden = true;
+  setMessage('#simple-injection-error', '');
+  updateSimpleInjectionFields();
+}
+
+function editSimpleInjection(index) {
+  const item = readDirectInjections()[index];
+  editingInjectionIndex = index;
+  $('#simple-injection-type').value = item.type;
+  $('#simple-injection-name').value = item.name || '';
+  $('#simple-injection-location').value = item.location || 'head-end';
+  $('#simple-injection-url').value = item.url || '';
+  $('#simple-injection-content').value = item.content || '';
+  $('#simple-script-defer').checked = item.attributes?.defer !== false;
+  $('#save-simple-injection').textContent = 'Save change';
+  $('#cancel-simple-injection').hidden = false;
+  updateSimpleInjectionFields();
+}
+
+function renderSimpleInjections(items = readDirectInjections()) {
+  const list = $('#simple-injection-list');
+  list.replaceChildren();
+  if (!items.length) {
+    list.append(node('p', 'Nothing is added directly to this site yet.', 'muted'));
+    return;
+  }
+  items.forEach((item, index) => {
+    const entry = node('div', undefined, 'injection-entry');
+    const detail = node('div');
+    detail.append(node('strong', item.name), node('p', `${injectionTypeLabel(item.type)} - ${item.location}`));
+    const actions = node('div', undefined, 'card-actions');
+    if (isSimpleEditableInjection(item)) actions.append(button('Edit', () => editSimpleInjection(index)));
+    else if (['external-script', 'inline-script', 'html'].includes(item.type)) detail.append(node('small', 'Advanced controls are preserved. Use Advanced mode and edit the JSON for this item.'));
+    actions.append(button('Remove', () => {
+      if (!confirm(`Remove ${item.name} from this draft editor? Live traffic is unchanged until activation.`)) return;
+      const next = readDirectInjections();
+      next.splice(index, 1);
+      $('#injections').value = JSON.stringify(next, null, 2);
+      renderSimpleInjections(next);
+      resetSimpleInjectionEditor();
+    }, 'danger'));
+    entry.append(detail, actions);
+    list.append(entry);
+  });
+}
+
+function saveSimpleInjection() {
+  try {
+    setMessage('#simple-injection-error', '');
+    const items = readDirectInjections();
+    const type = $('#simple-injection-type').value;
+    const name = $('#simple-injection-name').value.trim();
+    if (!name) throw new Error('Give this injection a short name');
+    const existing = editingInjectionIndex >= 0 ? items[editingInjectionIndex] : null;
+    const item = {
+      ...(existing?.id ? { id: existing.id } : {}), name, type, enabled: true,
+      location: $('#simple-injection-location').value,
+      priority: existing?.priority ?? (items.length ? Math.max(...items.map((entry) => Number(entry.priority) || 0)) + 10 : 0),
+    };
+    if (type === 'external-script') {
+      const parsed = new URL($('#simple-injection-url').value);
+      if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error('Script URL must be a credential-free HTTP(S) URL');
+      item.url = parsed.href;
+      item.attributes = { defer: $('#simple-script-defer').checked };
+    } else {
+      item.content = $('#simple-injection-content').value;
+      if (!item.content.trim()) throw new Error(type === 'html' ? 'Enter the HTML block to add' : 'Enter the JavaScript code to add');
+      if (type === 'html' && /<\s*script\b/i.test(item.content)) throw new Error('Use the JavaScript injection type for scripts instead of hiding a script inside HTML');
+    }
+    if (editingInjectionIndex >= 0) items[editingInjectionIndex] = item;
+    else items.push(item);
+    $('#injections').value = JSON.stringify(items, null, 2);
+    $('#route-mode').value = 'inject';
+    renderSimpleInjections(items);
+    resetSimpleInjectionEditor();
+  } catch (error) { setMessage('#simple-injection-error', error.message, true); }
 }
 
 function editorRoute() {
@@ -153,6 +348,9 @@ function fillRoute(config, draft = null) {
   $('#csp-mode').value = config.cspMode || 'skip';
   $('#injections').value = JSON.stringify(config.injections || [], null, 2);
   $('#route-notes').value = config.notes || '';
+  renderProfilePicker(config.profileIds || []);
+  renderSimpleInjections(config.injections || []);
+  resetSimpleInjectionEditor();
   $('#test-route').disabled = !draft;
   $('#activate-route').disabled = !draft;
   $('#route-result').textContent = '';
@@ -162,37 +360,41 @@ function fillRoute(config, draft = null) {
 
 function openRoute(route) {
   currentRoute = route;
-  $('#route-editor-title').textContent = route.draft ? `Edit draft · ${route.hostname}` : `Edit route · ${route.hostname}`;
+  $('#route-editor-title').textContent = route.draft ? `Edit draft - ${route.hostname}` : `Edit site - ${route.hostname}`;
   fillRoute(routeConfig(route), route.draft);
 }
 
 async function newRoute() {
   currentRoute = null;
   templateCache = await api('/api/routes/template');
-  $('#route-editor-title').textContent = 'New route';
+  $('#route-editor-title').textContent = 'New site';
   fillRoute(templateCache);
 }
 
 async function saveDraft(event) {
   event.preventDefault();
+  setMessage('#route-message', 'Saving and validating the draft...');
   try {
     const result = await api('/api/routes/draft', { method: 'POST', body: JSON.stringify({ route: editorRoute() }) });
     currentDraft = { id: result.versionId, version_no: result.versionNo };
     $('#test-route').disabled = false;
     $('#activate-route').disabled = false;
     $('#route-result').textContent = JSON.stringify(result, null, 2);
+    setMessage('#route-message', 'Draft saved safely. Live traffic has not changed. Next, test the destination.');
     toast('Draft saved. Active traffic is unchanged.');
     await loadRoutes();
-  } catch (error) { $('#route-result').textContent = error.message; }
+  } catch (error) { $('#route-result').textContent = error.message; setMessage('#route-message', error.message, true); }
 }
 
 async function testDraft() {
+  setMessage('#route-message', 'Testing the destination through the configured network policy...');
   try {
     const routeId = $('#route-id').value;
     const result = await api(`/api/routes/${encodeURIComponent(routeId)}/test`, { method: 'POST', body: JSON.stringify({ versionId: currentDraft.id }) });
     $('#route-result').textContent = JSON.stringify(result, null, 2);
+    setMessage('#route-message', `Destination test passed${result.status ? ` with HTTP ${result.status}` : ''}. You can activate this draft.`);
     toast('Candidate route passed its health check.');
-  } catch (error) { $('#route-result').textContent = error.message; }
+  } catch (error) { $('#route-result').textContent = error.message; setMessage('#route-message', error.message, true); }
 }
 
 async function activateDraft() {
@@ -201,10 +403,11 @@ async function activateDraft() {
     const routeId = $('#route-id').value;
     const result = await api(`/api/routes/${encodeURIComponent(routeId)}/activate`, { method: 'POST', body: JSON.stringify({ versionId: currentDraft.id }) });
     $('#route-result').textContent = JSON.stringify(result, null, 2);
+    setMessage('#route-message', $('#route-enabled').checked ? 'Site activated and turned on.' : 'Draft activated, but the site remains off until you enable it.');
     toast('Route activated atomically.');
     currentDraft = null;
     await loadRoutes();
-  } catch (error) { $('#route-result').textContent = error.message; }
+  } catch (error) { $('#route-result').textContent = error.message; setMessage('#route-message', error.message, true); }
 }
 
 async function cloneRoute(route) {
@@ -267,9 +470,15 @@ function renderProfiles() {
   for (const profile of profiles) {
     const card = node('article', undefined, 'card');
     const detail = node('div');
-    detail.append(node('h3', profile.name), node('p', `${profile.kind} · revision ${profile.revision} · ${profile.items.length} item(s) · ID ${profile.id}`));
+    detail.append(node('h3', profile.name), node('p', `${profile.kind === 'umami' ? 'Umami' : 'Custom'} - revision ${profile.revision} - ${profile.items.map((item) => injectionTypeLabel(item.type)).join(', ') || 'empty'}`));
     const actions = node('div', undefined, 'card-actions');
-    actions.append(button('Edit', () => editProfile(profile)), button('Delete', async () => {
+    actions.append(button('Use on new site', async () => {
+      showView('routes');
+      await newRoute();
+      const input = [...document.querySelectorAll('#profile-picker input')].find((entry) => entry.value === profile.id);
+      if (input) { input.checked = true; syncProfileIdsFromPicker(); }
+      toast(`${profile.name} selected for the new site.`);
+    }, 'secondary'), button('Edit JSON', () => editProfile(profile), 'ghost advanced-only'), button('Delete', async () => {
       if (!confirm(`Delete profile ${profile.name}? Existing active route snapshots keep their current injected items.`)) return;
       try { await api(`/api/profiles/${encodeURIComponent(profile.id)}`, { method: 'DELETE' }); await loadProfiles(); } catch (error) { toast(error.message); }
     }, 'danger'));
@@ -278,7 +487,11 @@ function renderProfiles() {
   }
 }
 
-async function loadProfiles() { profiles = await api('/api/profiles'); renderProfiles(); }
+async function loadProfiles() {
+  profiles = await api('/api/profiles');
+  renderProfiles();
+  if (!$('#route-form').hidden) renderProfilePicker(readLines('#profile-ids'));
+}
 
 function resetProfileEditor() {
   currentProfile = null;
@@ -306,14 +519,39 @@ function editProfile(profile) {
 
 async function createUmami(event) {
   event.preventDefault();
+  setMessage('#umami-parse-result', 'Validating the pasted Umami settings...');
+  if ($('#umami-snippet').value.trim()) {
+    try { await extractUmami(); } catch { return; }
+  }
   const item = {
     name: `${$('#umami-name').value} scripts`, enabled: true, type: 'umami', location: 'head-end', priority: 0,
     options: { analytics: $('#umami-analytics').checked, recorder: $('#umami-recorder').checked, websiteId: $('#umami-website-id').value, analyticsUrl: $('#umami-url').value, recorderUrl: $('#umami-recorder-url').value },
   };
   try {
     await api('/api/profiles', { method: 'POST', body: JSON.stringify({ name: $('#umami-name').value, kind: 'umami', enabled: true, items: [item], notes: 'Structured Umami integration' }) });
-    event.target.reset(); $('#umami-analytics').checked = true; await loadProfiles(); toast('Umami profile created.');
-  } catch (error) { toast(error.message); }
+    event.target.reset();
+    $('#umami-analytics').checked = true;
+    $('#umami-extracted').hidden = true;
+    setMessage('#umami-parse-result', 'Umami injection saved. Choose “Use on new site” or select it in an existing site.');
+    await loadProfiles(); toast('Umami injection saved.');
+  } catch (error) { setMessage('#umami-parse-result', error.message, true); }
+}
+
+async function extractUmami() {
+  try {
+    const parsed = await api('/api/profiles/umami/parse', { method: 'POST', body: JSON.stringify({ snippet: $('#umami-snippet').value }) });
+    $('#umami-website-id').value = parsed.websiteId;
+    $('#umami-url').value = parsed.analyticsUrl;
+    $('#umami-recorder-url').value = parsed.recorderUrl;
+    $('#umami-analytics').checked = parsed.analytics;
+    $('#umami-recorder').checked = parsed.recorder;
+    $('#umami-extracted').hidden = false;
+    setMessage('#umami-parse-result', `Extracted ${parsed.analytics ? 'analytics' : ''}${parsed.analytics && parsed.recorder ? ' and ' : ''}${parsed.recorder ? 'recorder' : ''} for website ${parsed.websiteId}.`);
+    return parsed;
+  } catch (error) {
+    setMessage('#umami-parse-result', error.message, true);
+    throw error;
+  }
 }
 
 async function createProfile(event) {
@@ -454,7 +692,7 @@ async function bootstrap() {
   try {
     const session = await api('/api/session'); csrf = session.csrf; $('#login').hidden = true; $('#app').hidden = false;
     templateCache = await api('/api/routes/template');
-    const status = await api('/api/status'); $('#system-state').textContent = `${status.activeRoutes} active · ${status.netbirdMode} mode`;
+    const status = await api('/api/status'); $('#system-state').textContent = `${status.activeRoutes} active - ${status.netbirdMode} mode`;
     await Promise.all([loadRoutes(), loadProfiles()]);
   } catch { $('#login').hidden = false; $('#app').hidden = true; }
 }
@@ -465,6 +703,7 @@ $('#login-form').addEventListener('submit', async (event) => {
   catch (error) { $('#login-error').textContent = error.message; }
 });
 $('#logout').addEventListener('click', async () => { await api('/api/logout', { method: 'POST' }); location.reload(); });
+$('#advanced-mode').addEventListener('change', (event) => setAdvancedMode(event.target.checked));
 document.querySelectorAll('.tabs button').forEach((entry) => entry.addEventListener('click', () => showView(entry.dataset.view)));
 $('#new-route').addEventListener('click', newRoute);
 $('#close-route').addEventListener('click', () => { $('#route-form').hidden = true; });
@@ -472,6 +711,15 @@ $('#route-form').addEventListener('submit', saveDraft);
 $('#test-route').addEventListener('click', testDraft);
 $('#activate-route').addEventListener('click', activateDraft);
 $('#close-history').addEventListener('click', () => { $('#history-panel').hidden = true; });
+$('#open-injections').addEventListener('click', () => showView('profiles'));
+$('#simple-injection-type').addEventListener('change', updateSimpleInjectionFields);
+$('#save-simple-injection').addEventListener('click', saveSimpleInjection);
+$('#cancel-simple-injection').addEventListener('click', resetSimpleInjectionEditor);
+$('#profile-ids').addEventListener('change', () => renderProfilePicker(readLines('#profile-ids')));
+$('#injections').addEventListener('change', () => {
+  try { renderSimpleInjections(); setMessage('#simple-injection-error', ''); } catch (error) { setMessage('#simple-injection-error', error.message, true); }
+});
+$('#parse-umami').addEventListener('click', extractUmami);
 $('#umami-form').addEventListener('submit', createUmami);
 $('#profile-form').addEventListener('submit', createProfile);
 $('#cancel-profile-edit').addEventListener('click', resetProfileEditor);
@@ -489,4 +737,6 @@ $('#import-file').addEventListener('change', async (event) => {
   try { if (file.size > 5_242_880) throw new Error('Import file exceeds the 5 MiB limit'); const data = JSON.parse(await file.text()); const result = await api('/api/import', { method: 'POST', body: JSON.stringify(data) }); toast(`Imported ${result.routeDrafts} disabled route draft(s).`); await loadRoutes(); }
   catch (error) { toast(error.message); } finally { event.target.value = ''; }
 });
+setAdvancedMode(localStorage.getItem(ADVANCED_STORAGE_KEY) === 'true', { persist: false });
+updateSimpleInjectionFields();
 bootstrap();

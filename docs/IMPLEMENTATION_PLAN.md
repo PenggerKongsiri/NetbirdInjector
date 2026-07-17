@@ -7,6 +7,7 @@
 3. Implemented strict validation, CIDR policy, SQLite current-draft/version store, bounded injection engine, data proxy, admin API/UI, read-only NetBird client, lifecycle tooling, and documentation.
 4. Added unit, integration, malformed-input corpus, compression, WebSocket, timeout, forwarding-header, route-history, authentication, custom-CA, and SNI tests.
 5. Added pinned least-privilege CI, non-publishing release-validation artifacts, checksums/manifests, hardened systemd service, an unprivileged container, isolated sandbox, reproducible browser smoke, and mocked Linux lifecycle tests.
+6. Added a simple-by-default traffic map and site workflow, Advanced mode for low-level controls, direct external/inline script and HTML/card editing, and a bounded non-executing Umami paste parser with negative security tests.
 
 ## Remaining validation gates
 

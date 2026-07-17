@@ -16,12 +16,12 @@ Do not replace a working route yet. Use the parallel test-domain migration in [d
 
 - Exact normalized hostname routing; unknown hosts return `421` and never reach a default upstream.
 - Atomic current-draft activation, health-gated changes, exact-snapshot enable/disable, version history, soft deletion, and one-click rollback.
-- HTTP/HTTPS upstreams, explicit Host and TLS SNI, TLS verification, custom CA PEM, timeouts, streaming uploads, redirects, errors, SSE, ranges, and WebSocket tunneling.
+- HTTP/HTTPS upstreams, explicit Host and TLS SNI, verified TLS or an explicit per-site verification exception, custom CA PEM, timeouts, streaming uploads, redirects, errors, SSE, ranges, and WebSocket tunneling.
 - Global destination CIDR and port allowlists with DNS revalidation at dial time to contain SSRF and DNS rebinding.
 - Safe HTML eligibility rules: only bounded `200 GET text/html` responses; downloads, APIs, binary data, ranges, `no-transform`, unsupported compression, CSP-protected pages (default), and excluded paths pass unchanged.
 - Gzip, deflate, and Brotli response modification with a decompressed-size ceiling.
 - External/inline scripts, external/inline styles, arbitrary approved HTML, meta tags, data attributes, integrity/crossorigin/referrer policy, priority ordering, path/host scopes, nonce copying, duplicate text, and stable manager markers.
-- A simple-by-default operator UI: a live traffic map shows `NetBird service -> Injector VM -> destination peer`, and a guided site editor keeps raw IDs, TLS/SNI overrides, health details, CSP controls, import/export, preview, and audit under an explicit **Advanced mode** switch.
+- A simple-by-default operator UI: a live traffic map shows `NetBird service -> Injector VM -> destination peer`; the guided site editor groups protocol, destination, and port into one endpoint control, shows the HTTPS certificate-verification exception only when it applies, and keeps low-level route controls under **Optional settings** and **Advanced mode**.
 - Reusable, editable, revisioned profiles plus a paste-and-extract Umami analytics/recorder form. The bounded parser accepts only one or two empty external script tags, extracts the URLs and website ID without executing the paste, and rejects inline code, extra markup, unknown attributes, credentials, and inconsistent IDs.
 - Guided external-script, inline-JavaScript, and HTML block/card injection without writing JSON. Profile contents and direct items are snapshotted into route versions for exact rollback; saving a draft never changes live traffic.
 - Loopback-only admin UI by default, or explicit private-IP HTTPS with a private client-CIDR allowlist. Authentication includes a named local administrator, scrypt password, optional authenticator-app TOTP 2FA, one-time recovery codes, expiring sessions, Secure/HttpOnly/SameSite cookies for remote mode, CSRF protection, throttling, strict CSP, escaped rendering, and audit records.
@@ -128,10 +128,11 @@ After signing in, open **Settings** to change the administrator username/passwor
 For the first site, stay in the default simple mode:
 
 1. Open **Injections**. For Umami, paste the tracker and optional recorder tags, review the extracted website ID and HTTPS URLs, and save the reusable injection.
-2. Open **Sites**, select **Add a site**, enter the exact public hostname and the destination NetBird peer/IP/DNS name, protocol, and port.
+2. Open **Sites**, select **Add a site**, enter the exact public hostname, then enter the destination application's protocol, NetBird peer/IP/DNS name, and port in the combined endpoint control. Use the application peer, not the Injector VM's own NetBird IP.
 3. Choose the saved injection, or add an external script, inline JavaScript, or an HTML block/card directly to that site.
 4. Select **Save safe draft**, **Test destination**, then **Activate**. Live traffic changes only at the final confirmed activation step.
-5. Use **Advanced mode** only when you need explicit Host/SNI/TLS values, health rules, path scopes, CSP behavior, raw profile JSON, preview, import/export, or audit history.
+5. For an HTTPS destination with a self-signed certificate, first prefer a reviewed custom CA under **Optional settings** in **Advanced mode**. If that is not possible, the visible **Skip TLS verification** switch is a per-site exception and is off by default. It permits an untrusted certificate but cannot verify the destination's certificate identity.
+6. Open **Optional settings** for Host, SNI, health path, or custom CA details. Use **Advanced mode** only for timeouts, health rules, path scopes, CSP behavior, raw profile JSON, preview, import/export, or audit history.
 
 Injected JavaScript and HTML run in the destination site's browser origin and are therefore as powerful as code deployed by that site. Only use reviewed content. The admin UI never executes pasted Umami tags or previews injected scripts. See [the injection profile guide](docs/INJECTION_PROFILES.md).
 

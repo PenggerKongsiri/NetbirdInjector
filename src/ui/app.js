@@ -196,6 +196,17 @@ function updateSimpleInjectionFields() {
   $('#simple-injection-content-label').textContent = type === 'html' ? 'HTML content' : 'JavaScript code';
 }
 
+function updateTlsControls() {
+  const https = $('#upstream-protocol').value === 'https';
+  const panel = $('#tls-skip-panel');
+  panel.hidden = !https;
+  $('#upstream-sni-wrap').hidden = !https;
+  if (!https) $('#skip-tls-verify').checked = false;
+  const skipping = https && $('#skip-tls-verify').checked;
+  panel.classList.toggle('enabled', skipping);
+  $('#tls-skip-warning').hidden = !skipping;
+}
+
 function resetSimpleInjectionEditor() {
   editingInjectionIndex = -1;
   $('#simple-injection-type').value = 'external-script';
@@ -299,7 +310,7 @@ function editorRoute() {
       port: Number($('#upstream-port').value),
       hostHeader: $('#upstream-host-header').value,
       serverName: $('#upstream-sni').value,
-      tlsVerify: $('#tls-verify').checked,
+      tlsVerify: !$('#skip-tls-verify').checked,
       caPem: $('#custom-ca').value,
     },
     timeouts: {
@@ -333,7 +344,7 @@ function fillRoute(config, draft = null) {
   $('#upstream-port').value = config.upstream.port;
   $('#upstream-host-header').value = config.upstream.hostHeader || '';
   $('#upstream-sni').value = config.upstream.serverName || '';
-  $('#tls-verify').checked = config.upstream.tlsVerify !== false;
+  $('#skip-tls-verify').checked = config.upstream.tlsVerify === false;
   $('#custom-ca').value = config.upstream.caPem || '';
   $('#connect-timeout').value = config.timeouts.connectMs;
   $('#response-timeout').value = config.timeouts.responseMs;
@@ -348,6 +359,7 @@ function fillRoute(config, draft = null) {
   $('#csp-mode').value = config.cspMode || 'skip';
   $('#injections').value = JSON.stringify(config.injections || [], null, 2);
   $('#route-notes').value = config.notes || '';
+  updateTlsControls();
   renderProfilePicker(config.profileIds || []);
   renderSimpleInjections(config.injections || []);
   resetSimpleInjectionEditor();
@@ -713,6 +725,8 @@ $('#activate-route').addEventListener('click', activateDraft);
 $('#close-history').addEventListener('click', () => { $('#history-panel').hidden = true; });
 $('#open-injections').addEventListener('click', () => showView('profiles'));
 $('#simple-injection-type').addEventListener('change', updateSimpleInjectionFields);
+$('#upstream-protocol').addEventListener('change', updateTlsControls);
+$('#skip-tls-verify').addEventListener('change', updateTlsControls);
 $('#save-simple-injection').addEventListener('click', saveSimpleInjection);
 $('#cancel-simple-injection').addEventListener('click', resetSimpleInjectionEditor);
 $('#profile-ids').addEventListener('change', () => renderProfilePicker(readLines('#profile-ids')));
@@ -739,4 +753,5 @@ $('#import-file').addEventListener('change', async (event) => {
 });
 setAdvancedMode(localStorage.getItem(ADVANCED_STORAGE_KEY) === 'true', { persist: false });
 updateSimpleInjectionFields();
+updateTlsControls();
 bootstrap();

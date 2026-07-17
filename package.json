@@ -1,6 +1,6 @@
 {
   "name": "netbird-injector-manager",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "description": "Security-focused reverse proxy route and HTML injection manager for NetBird deployments",
   "type": "module",

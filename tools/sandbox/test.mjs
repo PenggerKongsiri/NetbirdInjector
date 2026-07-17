@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
 import net from 'node:net';
 import { gunzipSync } from 'node:zlib';
 
 if (process.env.NODE_TEST_CONTEXT) process.exit(0);
+
+const adminTls = { ca: readFileSync('/workspace/test/fixtures/tls/ca.pem'), servername: 'upstream.test', minVersion: 'TLSv1.2' };
 
 function request(path, { host = 'html.test.invalid', method = 'GET', body, headers = {} } = {}) {
   return new Promise((resolve, reject) => {
@@ -25,7 +28,7 @@ function admin(path, { method = 'GET', body, cookie, csrf } = {}) {
     const headers = { connection: 'close', ...(payload ? { 'content-type': 'application/json', 'content-length': payload.length } : {}) };
     if (cookie) headers.cookie = cookie;
     if (csrf) headers['x-csrf-token'] = csrf;
-    const req = https.request({ hostname: '172.30.250.10', port: 9090, path, method, headers, rejectUnauthorized: false, agent: false }, (res) => {
+    const req = https.request({ hostname: '172.30.250.10', port: 9090, path, method, headers, ...adminTls, agent: false }, (res) => {
       const chunks = []; res.on('data', (chunk) => chunks.push(chunk)); res.on('end', () => { const text = Buffer.concat(chunks).toString(); resolve({ status: res.statusCode, headers: res.headers, json: () => JSON.parse(text) }); });
     });
     req.on('error', reject); if (payload) req.write(payload); req.end();

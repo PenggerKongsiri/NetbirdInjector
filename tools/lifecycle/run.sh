@@ -5,7 +5,7 @@ APP="netbird-injector-manager"
 WORKSPACE="/workspace"
 
 assert_mode() { [[ "$(stat -c '%a' -- "$1")" == "$2" ]] || { printf 'unexpected mode for %s\n' "$1" >&2; exit 1; }; }
-health_once() { node -e 'const c=require(process.argv[1]);const tls=Boolean(c.admin.tlsCertFile);const client=require(tls?"node:https":"node:http");const req=client.request({host:c.admin.listen,port:c.admin.port,path:"/healthz",method:"GET",rejectUnauthorized:false,timeout:1000},r=>{r.resume();process.exit(r.statusCode===200?0:1)});req.on("timeout",()=>req.destroy());req.on("error",()=>process.exit(1));req.end()' "/etc/${APP}/config.json"; }
+health_once() { node -e 'const c=require(process.argv[1]);const tls=Boolean(c.admin.tlsCertFile);const client=require(tls?"node:https":"node:http");const options={host:c.admin.listen,port:c.admin.port,path:"/healthz",method:"GET",timeout:1000};if(tls){options.ca=require("node:fs").readFileSync(c.admin.tlsCertFile);options.minVersion="TLSv1.2"}const req=client.request(options,r=>{r.resume();process.exit(r.statusCode===200?0:1)});req.on("timeout",()=>req.destroy());req.on("error",()=>process.exit(1));req.end()' "/etc/${APP}/config.json"; }
 health() {
   for _ in {1..30}; do health_once && return; sleep 0.2; done
   return 1

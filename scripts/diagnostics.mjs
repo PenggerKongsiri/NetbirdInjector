@@ -8,13 +8,14 @@ import { Store } from '../src/lib/store.mjs';
 function probeService(config) {
   const tls = Boolean(config.admin.tlsCertFile);
   const client = tls ? https : http;
+  const tlsOptions = tls ? { ca: readFileSync(config.admin.tlsCertFile), minVersion: 'TLSv1.2' } : {};
   return new Promise((resolve, reject) => {
     const request = client.request({
       host: config.admin.listen,
       port: config.admin.port,
       path: '/healthz',
       method: 'GET',
-      rejectUnauthorized: false,
+      ...tlsOptions,
       timeout: 2000,
     }, (response) => {
       response.resume();

@@ -8,7 +8,7 @@ const textExtensions = new Set(['', '.css', '.html', '.js', '.json', '.md', '.mj
 const machinePathPattern = new RegExp([
   'C:' + '\\\\' + 'Users' + '\\\\' + '[^\\\\\r\n]+',
   '/' + 'Users/[^/\r\n]+',
-  '/' + 'home/(?!<)[^/\s]+',
+  '/' + 'home/(?!<)[^/\\s]+',
   'Se' + 'afile',
 ].join('|'), 'i');
 const secretPrefixPattern = new RegExp(['gh' + 'p_[A-Za-z0-9]{30,}', 'github_' + 'pat_[A-Za-z0-9_]{40,}', 'nb' + 'p_[A-Za-z0-9_-]{24,}'].join('|'));

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
+import { readFileSync } from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
 import { fileURLToPath } from 'node:url';
@@ -14,12 +15,12 @@ const proxy = { routeCount: () => 0, status: async () => ({ activeConnections: 0
 const netbird = { localStatus: async () => ({ available: false }), peers: async () => [], clusters: async () => [] };
 const networkPolicy = new NetworkPolicy({ allowedTargetCidrs: ['127.0.0.1/32'], trustedIngressCidrs: [], allowedPorts: [80] });
 
-function call(client, port, path, { method = 'GET', body, rejectUnauthorized = true } = {}) {
+function call(client, port, path, { method = 'GET', body, ca } = {}) {
   return new Promise((resolve, reject) => {
     const payload = body === undefined ? null : Buffer.from(JSON.stringify(body));
     const headers = { connection: 'close' };
     if (payload) { headers['content-type'] = 'application/json'; headers['content-length'] = payload.length; }
-    const req = client.request({ hostname: '127.0.0.1', port, path, method, headers, rejectUnauthorized, agent: false }, (res) => {
+    const req = client.request({ hostname: '127.0.0.1', port, path, method, headers, ...(ca ? { ca, minVersion: 'TLSv1.2' } : {}), agent: false }, (res) => {
       const chunks = [];
       res.on('data', (chunk) => chunks.push(chunk));
       res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, encrypted: Boolean(res.socket.encrypted), body: Buffer.concat(chunks).toString() }));
@@ -45,10 +46,12 @@ test('native admin TLS and private client CIDR enforcement work end to end', asy
   admin.server.listen(0, '127.0.0.1'); await once(admin.server, 'listening');
   const port = admin.server.address().port;
   t.after(() => { admin.server.closeAllConnections(); admin.server.close(); store.close(); });
-  const health = await call(https, port, '/healthz', { rejectUnauthorized: false });
+  await assert.rejects(call(https, port, '/healthz'), /certificate|issuer|self-signed/i);
+  const ca = readFileSync(fileURLToPath(new URL('./fixtures/tls/ca.pem', import.meta.url)));
+  const health = await call(https, port, '/healthz', { ca });
   assert.equal(health.status, 200);
   assert.equal(health.encrypted, true);
-  const login = await call(https, port, '/api/login', { method: 'POST', rejectUnauthorized: false, body: { username: 'admin', password } });
+  const login = await call(https, port, '/api/login', { method: 'POST', ca, body: { username: 'admin', password } });
   assert.equal(login.status, 200);
   assert.match(login.headers['set-cookie'][0], /; Secure/);
 

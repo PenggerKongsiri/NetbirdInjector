@@ -63,6 +63,17 @@ try {
   await page.getByRole('button', { name: 'Close', exact: true }).click();
 
   await page.getByRole('button', { name: 'Edit this path', exact: true }).click();
+  const tlsSkipPanel = page.locator('#tls-skip-panel');
+  if (!await tlsSkipPanel.isHidden()) throw new Error('TLS bypass was shown for an HTTP destination');
+  await page.locator('#upstream-protocol').selectOption('https');
+  await tlsSkipPanel.waitFor({ state: 'visible' });
+  const tlsSkipSwitch = page.getByRole('switch', { name: /Skip TLS verification/i });
+  await tlsSkipSwitch.check();
+  await page.getByText(/Certificate identity will not be verified/).waitFor();
+  await page.locator('#upstream-protocol').selectOption('http');
+  await tlsSkipPanel.waitFor({ state: 'hidden' });
+  if (await page.locator('#skip-tls-verify').isChecked()) throw new Error('HTTP destination retained the TLS bypass state');
+  await page.getByText('Optional settings', { exact: true }).waitFor();
   await page.locator('#simple-injection-type').selectOption('html');
   await page.locator('#simple-injection-name').fill('Support card');
   await page.locator('#simple-injection-location').selectOption('body-end');
@@ -80,7 +91,7 @@ try {
   await page.getByText(/Destination test passed/).waitFor();
 
   await page.getByLabel('Advanced mode', { exact: true }).check();
-  await page.getByText('Advanced route controls', { exact: true }).click();
+  await page.getByText('Optional settings', { exact: true }).click();
   const directItems = JSON.parse(await page.locator('#injections').inputValue());
   const supportItem = directItems.find((item) => item.name === 'Support card');
   if (!supportItem) throw new Error('support card was not present in the direct injection JSON');
@@ -115,7 +126,7 @@ try {
   if (!['BUTTON', 'A', 'INPUT', 'SELECT', 'TEXTAREA'].includes(focused)) throw new Error(`keyboard navigation did not reach an interactive control: ${focused}`);
   await page.getByRole('button', { name: 'Sign out', exact: true }).click();
   await page.getByLabel('Administrator password').waitFor();
-  process.stdout.write('browser smoke passed: login, traffic map, account settings, clone/delete, Umami extraction, HTML/script builder, safe draft/test, advanced mode, stored-XSS escaping, peers, mobile, keyboard, logout\n');
+  process.stdout.write('browser smoke passed: login, traffic map, compact endpoint, per-route TLS switch, optional settings, account, clone/delete, Umami, HTML/script builder, draft/test, advanced mode, XSS escaping, peers, mobile, keyboard, logout\n');
 } finally {
   await browser?.close();
   if (environment.exitCode === null) environment.kill('SIGTERM');

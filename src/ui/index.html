@@ -55,10 +55,64 @@
           <div class="grid two">
             <label>Public site hostname<input id="route-hostname" placeholder="app.example.com" required><span class="field-help">Must exactly match the NetBird Reverse Proxy hostname.</span></label>
             <label>What should Injector do?<select id="route-mode"><option value="passthrough">Forward only - do not change pages</option><option value="inject">Forward and add selected injections</option></select></label>
-            <label>Destination peer IP or DNS name<input id="upstream-host" placeholder="100.64.0.10" required><span class="field-help">The NetBird peer running your application, such as the Coolify VM.</span></label>
-            <label>Application connection<select id="upstream-protocol"><option value="http">HTTP</option><option value="https">HTTPS</option></select></label>
-            <label>Application port<input id="upstream-port" type="number" min="1" max="65535" required></label>
           </div>
+
+          <section class="endpoint-section" aria-labelledby="endpoint-label">
+            <div class="endpoint-labels"><label id="endpoint-label" for="upstream-host">Protocol &amp; Host / IP</label><label for="upstream-port">Port</label></div>
+            <div class="endpoint-control-group">
+              <label class="sr-only" for="upstream-protocol">Application protocol</label>
+              <select id="upstream-protocol" class="endpoint-protocol" aria-label="Application protocol"><option value="http">http://</option><option value="https">https://</option></select>
+              <label class="sr-only" for="upstream-host">Destination peer IP or DNS name</label>
+              <input id="upstream-host" class="endpoint-host" placeholder="100.64.0.10" required>
+              <span class="endpoint-separator" aria-hidden="true">:</span>
+              <input id="upstream-port" class="endpoint-port" aria-label="Application port" type="number" min="1" max="65535" required>
+            </div>
+            <p class="field-help endpoint-help">Use the NetBird IP or DNS name of the peer running the application, not this Injector VM.</p>
+          </section>
+
+          <div id="tls-skip-panel" class="tls-skip-panel" hidden>
+            <label class="tls-skip-label" for="skip-tls-verify">
+              <span class="tls-skip-copy">
+                <strong>Skip TLS verification</strong>
+                <span id="tls-skip-description">Allows a self-signed or otherwise untrusted certificate for only this destination.</span>
+                <span id="tls-skip-warning" class="tls-skip-warning" hidden>Certificate identity will not be verified. Keep the destination, Host, and SNI exact and restrict access with NetBird policy.</span>
+              </span>
+              <span class="switch-control">
+                <input id="skip-tls-verify" type="checkbox" role="switch" aria-describedby="tls-skip-description tls-skip-warning">
+                <span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
+              </span>
+            </label>
+          </div>
+
+          <details class="advanced-panel optional-panel">
+            <summary>Optional settings</summary>
+            <div class="optional-content">
+              <div class="grid two">
+                <label>Upstream Host header<input id="upstream-host-header" placeholder="app.internal.example"><span class="field-help">Use the hostname Coolify, Traefik, or the application expects.</span></label>
+                <label id="upstream-sni-wrap">TLS SNI / server name<input id="upstream-sni" placeholder="app.internal.example"><span class="field-help">Usually the same hostname as the application certificate.</span></label>
+                <label>Health-check path<input id="health-path" value="/"></label>
+              </div>
+              <div class="advanced-only optional-advanced">
+                <div class="grid two advanced-fields">
+                  <label>Environment scope<input id="route-environment" placeholder="production" value="production"></label>
+                  <label>Connect timeout (ms)<input id="connect-timeout" type="number" min="100" max="120000"></label>
+                  <label>Response timeout (ms)<input id="response-timeout" type="number" min="100" max="600000"></label>
+                  <label>Idle/stream timeout (ms)<input id="idle-timeout" type="number" min="1000" max="3600000"></label>
+                  <label>Maximum HTML bytes<input id="max-inject-bytes" type="number" min="1024"></label>
+                  <label>Health-check method<select id="health-method"><option value="GET">GET</option><option value="HEAD">HEAD</option></select></label>
+                  <label>Accepted health statuses<input id="health-statuses" value="200,204,301,302,401,403"></label>
+                  <label>Excluded paths, one per line<textarea id="excluded-paths" rows="4" placeholder="/api/*"></textarea></label>
+                  <label>CSP behavior<select id="csp-mode"><option value="skip">Skip injection when CSP exists (recommended)</option><option value="preserve">Inject but preserve CSP unchanged</option></select></label>
+                </div>
+                <div class="checks"><label><input id="health-enabled" type="checkbox" checked> Require accepted application health status</label></div>
+                <label>Attached profile IDs<textarea id="profile-ids" rows="4"></textarea></label>
+                <label>Direct injection JSON<textarea id="injections" rows="12" spellcheck="false">[]</textarea></label>
+                <label>Custom CA PEM<textarea id="custom-ca" rows="5" spellcheck="false"></textarea></label>
+                <label>Notes<textarea id="route-notes" rows="3"></textarea></label>
+              </div>
+            </div>
+          </details>
+
           <div class="checks"><label><input id="route-enabled" type="checkbox"> Turn this site on after activation</label></div>
 
           <fieldset class="simple-panel">
@@ -84,28 +138,6 @@
             <p id="simple-injection-error" class="error" role="alert"></p>
           </fieldset>
 
-          <details class="advanced-only advanced-panel">
-            <summary>Advanced route controls</summary>
-            <div class="grid two advanced-fields">
-              <label>Environment scope<input id="route-environment" placeholder="production" value="production"></label>
-              <label>Upstream Host header<input id="upstream-host-header" placeholder="internal.example.local"></label>
-              <label>TLS SNI / server name<input id="upstream-sni" placeholder="internal.example.local"></label>
-              <label>Connect timeout (ms)<input id="connect-timeout" type="number" min="100" max="120000"></label>
-              <label>Response timeout (ms)<input id="response-timeout" type="number" min="100" max="600000"></label>
-              <label>Idle/stream timeout (ms)<input id="idle-timeout" type="number" min="1000" max="3600000"></label>
-              <label>Maximum HTML bytes<input id="max-inject-bytes" type="number" min="1024"></label>
-              <label>Health-check path<input id="health-path" value="/"></label>
-              <label>Health-check method<select id="health-method"><option value="GET">GET</option><option value="HEAD">HEAD</option></select></label>
-              <label>Accepted health statuses<input id="health-statuses" value="200,204,301,302,401,403"></label>
-              <label>Excluded paths, one per line<textarea id="excluded-paths" rows="4" placeholder="/api/*"></textarea></label>
-              <label>CSP behavior<select id="csp-mode"><option value="skip">Skip injection when CSP exists (recommended)</option><option value="preserve">Inject but preserve CSP unchanged</option></select></label>
-            </div>
-            <div class="checks"><label><input id="tls-verify" type="checkbox" checked> Verify upstream TLS</label><label><input id="health-enabled" type="checkbox" checked> Require accepted application health status</label></div>
-            <label>Attached profile IDs<textarea id="profile-ids" rows="4"></textarea></label>
-            <label>Direct injection JSON<textarea id="injections" rows="12" spellcheck="false">[]</textarea></label>
-            <label>Custom CA PEM<textarea id="custom-ca" rows="5" spellcheck="false"></textarea></label>
-            <label>Notes<textarea id="route-notes" rows="3"></textarea></label>
-          </details>
           <div class="form-actions workflow-actions"><button type="submit">1. Save safe draft</button><button type="button" id="test-route" class="secondary" disabled>2. Test destination</button><button type="button" id="activate-route" class="accent" disabled>3. Activate</button></div>
           <p id="route-message" class="workflow-message" role="status"></p>
           <pre id="route-result" class="result advanced-only"></pre>

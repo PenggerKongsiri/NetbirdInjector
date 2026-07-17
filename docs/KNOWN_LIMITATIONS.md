@@ -7,6 +7,7 @@
 - The 24-hour staging soak is provided but is not run during ordinary CI or this review session.
 - Only HTTP/1.1 downstream is implemented. CONNECT and arbitrary upgrades are rejected; WebSocket is the supported upgrade.
 - No server-side redirects are followed. Client redirects are passed through.
+- The per-route **Skip TLS verification** option accepts self-signed and otherwise untrusted HTTPS certificates, but it disables certificate identity verification for that destination. It is not a substitute for installing a reviewed custom CA or using a publicly trusted certificate.
 - CSP is never weakened. Pages with enforcing CSP skip by default; inline content may remain blocked under preserve mode.
 - HTML transformation is bounded and conservative, not a browser-grade DOM rewrite. Ambiguous, malformed, oversized, unsupported, streaming, range, download, and non-HTML responses pass through where possible.
 - The simple HTML/card editor is a trusted-operator input, not a sanitizer or WYSIWYG page builder. Arbitrary injected HTML and JavaScript execute with the destination origin's privileges.

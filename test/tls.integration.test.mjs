@@ -31,4 +31,8 @@ test('HTTPS health checks enforce custom CA and SNI', async (t) => {
   const unknownCa = await probeRoute(validated, policy);
   assert.equal(unknownCa.ok, false);
   assert.match(unknownCa.error, /certificate|issuer|self-signed/i);
+  validated.upstream.serverName = 'wrong.test'; validated.upstream.tlsVerify = false;
+  const explicitlyUnverified = await probeRoute(validated, policy);
+  assert.equal(explicitlyUnverified.ok, true);
+  assert.equal(explicitlyUnverified.status, 200);
 });

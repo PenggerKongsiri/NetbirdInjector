@@ -70,7 +70,7 @@ A rollback creates a draft from the complete historical snapshot, rechecks the u
 
 Enable/disable uses the exact active snapshot rather than rematerializing profiles. Enabling repeats the upstream health gate; the operation refuses to overwrite an unrelated pending draft.
 
-The control plane is simple by default and exposes a route traffic map, guided destination fields, reusable-profile selection, and direct script/HTML item forms. Advanced mode reveals the same underlying model's low-level controls; it is not a weaker validation path. Both modes save through the same authenticated, CSRF-protected APIs, create drafts, and use the same test and activation transaction.
+The control plane is simple by default and exposes a route traffic map, one combined protocol/destination/port control, a context-sensitive HTTPS verification switch, reusable-profile selection, and direct script/HTML item forms. Optional settings hold Host, SNI, and health-path details; Advanced mode reveals the same underlying model's remaining low-level controls. Neither is a weaker validation path. The verification switch maps only to the existing per-route `tlsVerify` field, is hidden for HTTP, and defaults to verification enabled. Both modes save through the same authenticated, CSRF-protected APIs, create drafts, and use the same test and activation transaction.
 
 ## Injection pipeline
 

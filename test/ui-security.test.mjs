@@ -9,4 +9,7 @@ test('admin UI keeps dynamic content in text nodes and CSP-compatible external a
   assert.doesNotMatch(document, /\son[a-z]+\s*=/i);
   assert.doesNotMatch(document, /<script(?![^>]*\bsrc=)[^>]*>/i);
   assert.match(document, /<script[^>]+src="\/app\.js"[^>]*><\/script>/i);
+  assert.match(document, /id="skip-tls-verify"[^>]+role="switch"/i);
+  assert.doesNotMatch(document, /id="tls-verify"/i);
+  assert.match(application, /tlsVerify:\s*!\$\('#skip-tls-verify'\)\.checked/);
 });

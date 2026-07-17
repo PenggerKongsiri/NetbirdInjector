@@ -5,7 +5,7 @@ const forbiddenBasenames = new Set(['.env', 'state.db', 'state.db-wal', 'state.d
 const machinePathPattern = new RegExp([
   'C:' + '\\\\' + 'Users' + '\\\\' + '[^\\\\\r\n]+',
   '/' + 'Users/[^/\r\n]+',
-  '/' + 'home/(?!<)[^/\s]+',
+  '/' + 'home/(?!<)[^/\\s]+',
   'Se' + 'afile',
 ].join('|'), 'i');
 const tokenPattern = new RegExp([

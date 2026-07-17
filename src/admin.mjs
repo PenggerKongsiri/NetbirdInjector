@@ -11,6 +11,7 @@ import {
   normalizeAdminUsername, SessionManager, totpProvisioningUri, verifyPassword, verifyTotp,
 } from './lib/security.mjs';
 import { id, json, readJson, safeEqual, text } from './lib/util.mjs';
+import { parseUmamiSnippet } from './lib/umami.mjs';
 import { probeRoute } from './proxy.mjs';
 
 const uiDirectory = fileURLToPath(new URL('./ui/', import.meta.url));
@@ -305,6 +306,10 @@ export function createAdmin({ store, config, networkPolicy, proxy, netbird, logg
         return json(res, 200, previewInjection({ route, html, method: body.method, status: body.status, headers: body.headers, path: body.path }), withSecurity());
       }
       if (req.method === 'GET' && url.pathname === '/api/profiles') return json(res, 200, store.listProfiles(), withSecurity());
+      if (req.method === 'POST' && url.pathname === '/api/profiles/umami/parse') {
+        const body = await readJson(req, 36_864);
+        return json(res, 200, parseUmamiSnippet(body.snippet), withSecurity());
+      }
       if (req.method === 'POST' && url.pathname === '/api/profiles') {
         const body = await readJson(req, 1_048_576);
         return json(res, 201, store.saveProfile(validateProfile(body.profile ?? body)), withSecurity());

@@ -183,8 +183,8 @@ test('binary, JSON, range, SSE, download, errors, and excluded paths are not eli
 });
 
 test('Umami supports analytics, recorder, both, and recorder-only profiles', () => {
-  const route = routeWith([{ name: 'Recorder', type: 'umami', enabled: true, location: 'head-end', priority: 0, options: { analytics: false, recorder: true, recorderUrl: 'https://analytics.example/recorder.js' } }]);
+  const route = routeWith([{ name: 'Recorder', type: 'umami', enabled: true, location: 'head-end', priority: 0, options: { analytics: false, recorder: true, websiteId: 'website-one', recorderUrl: 'https://analytics.example/recorder.js' } }]);
   const result = injectHtml('<html><head></head><body></body></html>', route, { path: '/' });
   assert.match(result.html, /recorder\.js/);
-  assert.doesNotMatch(result.html, /data-website-id/);
+  assert.match(result.html, /data-website-id="website-one"/);
 });

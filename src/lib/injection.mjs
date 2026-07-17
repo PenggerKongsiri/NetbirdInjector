@@ -54,7 +54,7 @@ export function renderInjection(item, html = '') {
         parts.push(`<script defer src="${escapeHtml(item.options.analyticsUrl)}" data-website-id="${escapeHtml(item.options.websiteId)}"${nonce ? ` nonce="${escapeHtml(nonce)}"` : ''}></script>`);
       }
       if (item.options.recorder) {
-        parts.push(`<script defer src="${escapeHtml(item.options.recorderUrl)}"${nonce ? ` nonce="${escapeHtml(nonce)}"` : ''}></script>`);
+        parts.push(`<script defer src="${escapeHtml(item.options.recorderUrl)}" data-website-id="${escapeHtml(item.options.websiteId)}"${nonce ? ` nonce="${escapeHtml(nonce)}"` : ''}></script>`);
       }
       return parts.join('\n');
     }

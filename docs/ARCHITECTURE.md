@@ -53,6 +53,7 @@ The admin and data listeners are separate. The admin listener defaults to loopba
 - `src/lib/network.mjs`: IPv4/IPv6 CIDR parsing, ingress trust, target/port authorization, dial-time DNS checks.
 - `src/lib/store.mjs`: SQLite schema, WAL/FULL durability, drafts, versions, profiles, audit records, transactions.
 - `src/admin.mjs` and `src/ui/`: control plane and dependency-free UI.
+- `src/lib/umami.mjs`: bounded, non-executing parser for the narrow Umami external-tag format used by the guided UI.
 - `src/netbird.mjs`: optional read-only peer/cluster cache and local CLI status.
 - `setup`, `scripts/`: lifecycle, diagnostics, checksummed backups.
 
@@ -68,6 +69,8 @@ The admin and data listeners are separate. The admin listener defaults to loopba
 A rollback creates a draft from the complete historical snapshot, rechecks the upstream, and activates it with the same transaction.
 
 Enable/disable uses the exact active snapshot rather than rematerializing profiles. Enabling repeats the upstream health gate; the operation refuses to overwrite an unrelated pending draft.
+
+The control plane is simple by default and exposes a route traffic map, guided destination fields, reusable-profile selection, and direct script/HTML item forms. Advanced mode reveals the same underlying model's low-level controls; it is not a weaker validation path. Both modes save through the same authenticated, CSRF-protected APIs, create drafts, and use the same test and activation transaction.
 
 ## Injection pipeline
 

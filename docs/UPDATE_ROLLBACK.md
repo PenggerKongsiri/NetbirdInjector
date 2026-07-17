@@ -1,5 +1,14 @@
 # Update and rollback
 
+For a managed VM installed by the guided public installer, the normal update is to rerun the same command used for installation:
+
+```bash
+curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+  https://raw.githubusercontent.com/PenggerKongsiri/NetbirdInjector/main/install.sh | bash
+```
+
+Review the displayed immutable commit and plan before approving. The bootstrap keeps an existing NetBird installation unchanged and automatically selects the backup-and-health-gated update path.
+
 Updates accept only an extracted runtime release containing `RELEASE_MANIFEST.json`. Verify both the archive checksum and the internal manifest before elevation:
 
 ```bash

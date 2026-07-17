@@ -65,6 +65,20 @@ test('admin login, CSRF, draft, health-gated activation, CSP, and export work en
   assert.equal(typeof runtimeStatus.runtime.memory.rss, 'number');
   assert.equal(typeof runtimeStatus.runtime.cpu.user, 'number');
   assert.equal(typeof runtimeStatus.runtime.activeResources, 'object');
+  const umamiSnippet = '<script defer src="https://analytics.example/script.js" data-website-id="site-one"></script><script defer src="https://analytics.example/recorder.js" data-website-id="site-one"></script>';
+  assert.equal((await httpCall(adminPort, '/api/profiles/umami/parse', { method: 'POST', cookie, body: { snippet: umamiSnippet } })).status, 403);
+  const parsedUmami = await httpCall(adminPort, '/api/profiles/umami/parse', { method: 'POST', cookie, csrf, body: { snippet: umamiSnippet } });
+  assert.equal(parsedUmami.status, 200);
+  assert.deepEqual(parsedUmami.json(), {
+    websiteId: 'site-one', analytics: true, recorder: true,
+    analyticsUrl: 'https://analytics.example/script.js', recorderUrl: 'https://analytics.example/recorder.js',
+  });
+  const unsafeUmami = await httpCall(adminPort, '/api/profiles/umami/parse', {
+    method: 'POST', cookie, csrf,
+    body: { snippet: '<script src="https://analytics.example/script.js" data-website-id="site-one">alert(1)</script>' },
+  });
+  assert.equal(unsafeUmami.status, 400);
+  assert.match(unsafeUmami.json().error, /must not contain inline JavaScript/);
   const template = (await httpCall(adminPort, '/api/routes/template', { cookie })).json();
   template.hostname = 'admin-test.example.com'; template.enabled = true; template.mode = 'inject';
   template.upstream.host = '127.0.0.1'; template.upstream.port = port;

@@ -21,7 +21,9 @@ Do not replace a working route yet. Use the parallel test-domain migration in [d
 - Safe HTML eligibility rules: only bounded `200 GET text/html` responses; downloads, APIs, binary data, ranges, `no-transform`, unsupported compression, CSP-protected pages (default), and excluded paths pass unchanged.
 - Gzip, deflate, and Brotli response modification with a decompressed-size ceiling.
 - External/inline scripts, external/inline styles, arbitrary approved HTML, meta tags, data attributes, integrity/crossorigin/referrer policy, priority ordering, path/host scopes, nonce copying, duplicate text, and stable manager markers.
-- Reusable, editable, revisioned profiles and a structured Umami analytics/recorder profile form. Profile contents are snapshotted into route versions for exact rollback.
+- A simple-by-default operator UI: a live traffic map shows `NetBird service -> Injector VM -> destination peer`, and a guided site editor keeps raw IDs, TLS/SNI overrides, health details, CSP controls, import/export, preview, and audit under an explicit **Advanced mode** switch.
+- Reusable, editable, revisioned profiles plus a paste-and-extract Umami analytics/recorder form. The bounded parser accepts only one or two empty external script tags, extracts the URLs and website ID without executing the paste, and rejects inline code, extra markup, unknown attributes, credentials, and inconsistent IDs.
+- Guided external-script, inline-JavaScript, and HTML block/card injection without writing JSON. Profile contents and direct items are snapshotted into route versions for exact rollback; saving a draft never changes live traffic.
 - Loopback-only admin UI by default, or explicit private-IP HTTPS with a private client-CIDR allowlist. Authentication includes a named local administrator, scrypt password, optional authenticator-app TOTP 2FA, one-time recovery codes, expiring sessions, Secure/HttpOnly/SameSite cookies for remote mode, CSRF protection, throttling, strict CSP, escaped rendering, and audit records.
 - Optional server-side NetBird peer and reverse-proxy cluster discovery. API loss never affects proxy traffic. Tokens are read from a server-only file and never returned to the browser.
 - Safe configuration export/import: imported routes are always disabled drafts and identifier conflicts fail without changing active traffic.
@@ -86,6 +88,8 @@ For a self-hosted NetBird deployment where the client is not installed yet, eith
 
 The bootstrap deliberately does **not** create NetBird policies, DNS records, firewall rules, reverse-proxy services, Coolify/Traefik changes, or application routes. Follow [the NetBird setup guide](docs/NETBIRD_SETUP.md) after installation and begin with a parallel test hostname. Ubuntu/Debian VM validation is still an external pre-1.0 gate; see [the support matrix](docs/SUPPORT_MATRIX.md).
 
+To update an existing managed VM, run the same one-command installer again. It detects `/opt/netbird-injector-manager/current` and the existing configuration, leaves an already installed NetBird client alone, creates a checksummed backup, verifies the new release manifest, restarts the service, and requires a successful health check. A failed restart or health check restores the previous code automatically. Routes, history, account settings, 2FA, certificates, and configuration remain in place.
+
 ## Secure quick start for local evaluation
 
 Requirements: Node.js `24.15–24.x`. Node 24.18.0 is the tested development version.
@@ -120,6 +124,16 @@ sudo ./setup install
 The installer creates the unprivileged `netbird-injector` account and asks for an administrator username, password, and access mode. The recommended mode keeps admin on loopback behind an SSH tunnel. An optional mode serves native HTTPS on one explicit RFC1918, NetBird CGNAT, or IPv6 ULA address, never a wildcard or public IP. It installs a hardened systemd unit and checks health. It does not touch NetBird, DNS, firewall policy, Coolify, Traefik, or current routes. See [the installation guide](docs/INSTALL.md) and [admin access/account guide](docs/ADMIN_ACCESS.md).
 
 After signing in, open **Settings** to change the administrator username/password, enroll authenticator 2FA, save or replace one-time recovery codes, disable 2FA, and see the effective admin URL/client CIDRs. Listener, certificate, and network changes remain root-controlled through `sudo ./setup reconfigure` because they require a service restart.
+
+For the first site, stay in the default simple mode:
+
+1. Open **Injections**. For Umami, paste the tracker and optional recorder tags, review the extracted website ID and HTTPS URLs, and save the reusable injection.
+2. Open **Sites**, select **Add a site**, enter the exact public hostname and the destination NetBird peer/IP/DNS name, protocol, and port.
+3. Choose the saved injection, or add an external script, inline JavaScript, or an HTML block/card directly to that site.
+4. Select **Save safe draft**, **Test destination**, then **Activate**. Live traffic changes only at the final confirmed activation step.
+5. Use **Advanced mode** only when you need explicit Host/SNI/TLS values, health rules, path scopes, CSP behavior, raw profile JSON, preview, import/export, or audit history.
+
+Injected JavaScript and HTML run in the destination site's browser origin and are therefore as powerful as code deployed by that site. Only use reviewed content. The admin UI never executes pasted Umami tags or previews injected scripts. See [the injection profile guide](docs/INJECTION_PROFILES.md).
 
 ## Documentation
 
